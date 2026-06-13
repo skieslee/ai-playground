@@ -489,15 +489,38 @@ function updateMusicBtn() {
   $("musicBtn").classList.toggle("off", !music.enabled);
 }
 $("musicBtn").addEventListener("click", () => { unlockAudio(); music.toggle(); });
+
+// 產生一段無聲 WAV 的 data URI（給 <audio> 元素用）
+function silentWavURI(seconds = 0.5) {
+  const sr = 8000, n = Math.floor(sr * seconds), bytes = 44 + n * 2;
+  const buf = new ArrayBuffer(bytes), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, "RIFF"); v.setUint32(4, bytes - 8, true); ws(8, "WAVE");
+  ws(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  ws(36, "data"); v.setUint32(40, n * 2, true);  // 取樣值預設為 0 即靜音
+  let bin = ""; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return "data:audio/wav;base64," + btoa(bin);
+}
+// 無聲的循環 <audio>：在 iOS 上把音訊工作階段切成「媒體播放」，
+// 這樣即使手機在靜音模式，WebAudio 也能從喇叭出聲（Tone.js / Howler 同手法）
+const silentEl = document.createElement("audio");
+silentEl.loop = true; silentEl.preload = "auto";
+silentEl.setAttribute("playsinline", "");
+silentEl.src = silentWavURI();
+
 // 行動瀏覽器（iOS Safari / Chrome）必須在使用者手勢「當下」同步播一個音訊節點才能解鎖，
-// 光呼叫 resume() 不夠。這裡在第一個手勢就播一段靜音 buffer 解鎖，再啟動配樂。
+// 光呼叫 resume() 不夠。這裡在第一個手勢就播靜音 buffer + 靜音 <audio> 解鎖，再啟動配樂。
 let audioUnlocked = false;
 function unlockAudio() {
+  // 1) 啟動無聲 <audio> 元素 → 解除 iOS 靜音模式對 WebAudio 的封鎖
+  silentEl.play().catch(() => {});
+  // 2) 解鎖並啟動 WebAudio
   let ctx;
   try { ctx = getCtx(); } catch (e) { return; }
   if (!audioUnlocked) {
-    // 同步播一個 1 sample 的靜音 buffer（iOS 解鎖關鍵）
-    const buf = ctx.createBuffer(1, 1, 22050);
+    const buf = ctx.createBuffer(1, 1, 22050);  // 同步播 1 sample 靜音 buffer（iOS 解鎖關鍵）
     const src = ctx.createBufferSource();
     src.buffer = buf; src.connect(ctx.destination); src.start(0);
     audioUnlocked = true;

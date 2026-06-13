@@ -488,18 +488,26 @@ function updateMusicBtn() {
   $("musicBtn").textContent = music.enabled ? "🎵" : "🔇";
   $("musicBtn").classList.toggle("off", !music.enabled);
 }
-$("musicBtn").addEventListener("click", () => music.toggle());
-// 瀏覽器規定要先有互動才能播聲音
-// iOS Safari 需要在 touchstart/touchend 同一 callstack 裡 resume AudioContext
+$("musicBtn").addEventListener("click", () => { unlockAudio(); music.toggle(); });
+// 行動瀏覽器（iOS Safari / Chrome）必須在使用者手勢「當下」同步播一個音訊節點才能解鎖，
+// 光呼叫 resume() 不夠。這裡在第一個手勢就播一段靜音 buffer 解鎖，再啟動配樂。
+let audioUnlocked = false;
 function unlockAudio() {
-  if (!actx) {
-    try { getCtx(); } catch (e) { return; }
+  let ctx;
+  try { ctx = getCtx(); } catch (e) { return; }
+  if (!audioUnlocked) {
+    // 同步播一個 1 sample 的靜音 buffer（iOS 解鎖關鍵）
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+    audioUnlocked = true;
   }
-  if (actx.state === "suspended") actx.resume();
+  ctx.resume();
   music.start();
 }
-document.addEventListener("pointerdown", e => { if (e.target.id !== "musicBtn") unlockAudio(); });
-document.addEventListener("touchstart",  e => { if (e.target.id !== "musicBtn") unlockAudio(); }, { passive: true });
+// 各種手勢都嘗試解鎖（涵蓋不同瀏覽器）
+["pointerdown", "touchend", "click", "keydown"].forEach(ev =>
+  document.addEventListener(ev, e => { if (e.target.id !== "musicBtn") unlockAudio(); }, { passive: true }));
 // 切到背景就暫停排程，回到前景再續播
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) music.stop();

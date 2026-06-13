@@ -360,11 +360,23 @@ const MUSIC_ID = Math.random().toString(36).slice(2);
 const MCH = (() => { try { return new BroadcastChannel("wb_music_ch"); } catch (e) { return null; } })();
 
 const music = {
-  TEMPO: 116,    // 曲速 BPM（越大越快）
-  VOL: 0.5,      // 配樂總音量（0~1）
+  BASE_TEMPO: 116, // 正常曲速 BPM
+  MAX_TEMPO:  180, // 危險時最快 BPM（水位 100% 時）
+  DANGER_LV:  80,  // 超過此水位（%）開始加速
+  TEMPO: 116,      // 當前曲速（遊戲迴圈動態更新）
+  VOL: 0.5,        // 配樂總音量（0~1）
   enabled: localStorage.getItem("wb_music") !== "0",
   timer: null, step: 0, nextT: 0, bus: null, noiseBuf: null,
   get stepDur() { return 60 / this.TEMPO / 2; },  // 一個八分音符的秒數
+  // 根據最高水位更新曲速（在遊戲主迴圈呼叫）
+  setDanger(maxLevel) {
+    if (maxLevel <= this.DANGER_LV) {
+      this.TEMPO = this.BASE_TEMPO;
+    } else {
+      const t = (maxLevel - this.DANGER_LV) / (100 - this.DANGER_LV); // 0→1
+      this.TEMPO = this.BASE_TEMPO + t * (this.MAX_TEMPO - this.BASE_TEMPO);
+    }
+  },
   initAudio() {
     getCtx();
     if (this.bus) return;
@@ -379,11 +391,21 @@ const music = {
   start() {
     if (!this.enabled || this.timer) return;
     try { this.initAudio(); } catch (e) { return; }
-    this.bus.gain.cancelScheduledValues(actx.currentTime);
-    this.bus.gain.value = this.VOL;
-    if (MCH) MCH.postMessage({ t: "takeover", id: MUSIC_ID });  // 其他分頁讓出播放權
-    this.nextT = actx.currentTime + 0.08;
-    this.timer = setInterval(() => this.tick(), 120);
+    if (MCH) MCH.postMessage({ t: "takeover", id: MUSIC_ID });
+    // Chrome/Safari 的 AudioContext.resume() 是非同步的，
+    // 必須等它完成後再開始排程，否則 currentTime 仍是 0 導致音符被跳過
+    const doStart = () => {
+      if (this.timer) return;  // 防止 race condition
+      this.bus.gain.cancelScheduledValues(actx.currentTime);
+      this.bus.gain.value = this.VOL;
+      this.nextT = actx.currentTime + 0.08;
+      this.timer = setInterval(() => this.tick(), 120);
+    };
+    if (actx.state === "suspended") {
+      actx.resume().then(doStart);
+    } else {
+      doStart();
+    }
   },
   tick() {
     const now = actx.currentTime;
@@ -706,6 +728,10 @@ function loop(t) {
   players.forEach((p, i) => drawBalloon(i, t));
   $("timeTxt").textContent = fmt(elapsed);
 
+  // 根據最危險玩家的水位動態加速音樂
+  const maxLevel = Math.max(...players.map(p => p.level));
+  music.setDanger(maxLevel);
+
   const popped = [];
   players.forEach((p, i) => { if (p.level >= 100) popped.push(i); });
   if (popped.length) { gameOver(popped); return; }
@@ -828,6 +854,7 @@ function startGame() {
 function gameOver(popped) {
   running = false;
   cancelAnimationFrame(rafId);
+  music.TEMPO = music.BASE_TEMPO;  // 回到正常速度
   const t = performance.now();
   players.forEach((_, i) => drawBalloon(i, t));
   popped.forEach(i => explode(i));
@@ -869,6 +896,7 @@ function showFinal(popped) {
 function goToMenu() {
   running = false;
   cancelAnimationFrame(rafId);
+  music.TEMPO = music.BASE_TEMPO;
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.remove("active");
   $("startScreen").classList.add("active");

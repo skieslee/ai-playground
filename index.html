@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>水球數學大挑戰</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  input[type=text] { user-select: text; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    background: linear-gradient(180deg, #aee7ff 0%, #d8f6ff 55%, #b8f0c8 55.5%, #8fdfa6 100%);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+
+  .screen { display: none; }
+  .screen.active { display: flex; }
+
+  /* ---------- 音樂開關（全畫面共用） ---------- */
+  #musicBtn {
+    position: fixed; top: 12px; right: 12px; z-index: 200;
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 3px solid #1577c2; background: rgba(255,255,255,.92);
+    font-size: 1.5rem; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,60,120,.25); transition: transform .1s;
+  }
+  #musicBtn:active { transform: scale(.92); }
+  #musicBtn.off { filter: grayscale(1); opacity: .6; }
+
+  /* ---------- 開始畫面 ---------- */
+  #startScreen {
+    flex-direction: column; align-items: center; gap: 16px;
+    background: rgba(255,255,255,.92);
+    border-radius: 24px; padding: 28px 44px;
+    box-shadow: 0 12px 40px rgba(0,60,120,.25);
+    max-width: 580px; width: 92vw;
+    max-height: 94vh; overflow-y: auto;
+  }
+  h1 { color: #1577c2; font-size: 2rem; letter-spacing: 2px; }
+  h1 .drop { font-size: 2.2rem; }
+  .subtitle { color: #555; font-size: .95rem; text-align: center; line-height: 1.5; }
+  .optGroup { width: 100%; }
+  .optGroup .label { font-weight: bold; color: #333; margin-bottom: 6px; font-size: 1rem; }
+  .optRow { display: flex; gap: 10px; flex-wrap: wrap; }
+  .optRow label {
+    flex: 1; min-width: 90px;
+    background: #eef6fc; border: 3px solid #cde4f2; border-radius: 14px;
+    padding: 9px 0; text-align: center; font-size: 1.1rem; cursor: pointer;
+    transition: all .15s;
+  }
+  .optRow input { display: none; }
+  .optRow label:has(input:checked) {
+    background: #1e90d6; border-color: #1577c2; color: #fff;
+    transform: scale(1.04);
+  }
+  .nameRow { display: flex; gap: 10px; }
+  .nameRow input {
+    flex: 1; min-width: 0;
+    font-family: inherit; font-size: 1.1rem;
+    border: 3px solid #cde4f2; border-radius: 14px;
+    padding: 9px 14px; outline: none; color: #234;
+  }
+  .nameRow input:focus { border-color: #1e90d6; }
+  #name2.hidden { display: none; }
+  #startBtn {
+    font-family: inherit; font-size: 1.45rem; font-weight: bold; letter-spacing: 4px;
+    color: #fff; background: linear-gradient(180deg,#ffa726,#fb8c00);
+    border: none; border-radius: 16px; padding: 13px 58px; cursor: pointer;
+    box-shadow: 0 6px 0 #e65100; transition: transform .1s, box-shadow .1s;
+  }
+  #startBtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e65100; }
+  .warn { color: #d32f2f; font-size: .9rem; min-height: 1.2em; }
+  .best { color: #888; font-size: .9rem; }
+
+  /* ---------- 遊戲畫面 ---------- */
+  #gameScreen {
+    width: 100vw; height: 100vh;
+    flex-direction: column; align-items: center;
+    padding: 10px;
+  }
+  #topBar {
+    flex: 0 0 auto; margin-bottom: 4px;
+    font-size: 1.15rem; font-weight: bold; color: #1565a0;
+  }
+  #topBar .box {
+    background: rgba(255,255,255,.85); border-radius: 12px; padding: 6px 20px;
+    box-shadow: 0 3px 8px rgba(0,60,120,.15);
+  }
+  #units {
+    flex: 1; min-height: 0; width: 100%;
+    display: flex; justify-content: center; gap: 2vw;
+  }
+  .unit { --accent: #1e90d6; min-width: 0; }
+  .unit[data-p="1"] { --accent: #e53935; }
+
+  .stageWrap {
+    flex: 1; min-height: 100px; min-width: 0;
+    display: flex; justify-content: center; align-items: flex-end;
+  }
+  .ctrl { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .uhud {
+    display: flex; justify-content: center;
+    font-size: 1.05rem; font-weight: bold; color: var(--accent);
+  }
+  .uhud .box {
+    background: rgba(255,255,255,.85); border-radius: 12px; padding: 5px 16px;
+    box-shadow: 0 3px 8px rgba(0,60,120,.15);
+  }
+  .question {
+    background: rgba(255,255,255,.95); border-radius: 18px;
+    font-weight: bold; color: #234;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0,60,120,.18);
+    letter-spacing: 2px;
+  }
+  .question .ans {
+    display: inline-block; min-width: 2.2ch; border-bottom: 4px solid var(--accent);
+    color: var(--accent); min-height: 1.1em;
+  }
+  .question.correct { animation: pulseGreen .45s; }
+  .question.wrong   { animation: shake .4s; }
+  @keyframes pulseGreen { 0%{background:#c8f7c5;} 100%{background:rgba(255,255,255,.95);} }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%,60% { transform: translateX(-10px); }
+    40%,80% { transform: translateX(10px); }
+  }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .pad button {
+    font-family: inherit; font-weight: bold;
+    border: none; border-radius: 14px; cursor: pointer;
+    background: #fff; color: #234;
+    box-shadow: 0 4px 0 #b9d4e6; transition: transform .08s, box-shadow .08s;
+  }
+  .pad button:active { transform: translateY(3px); box-shadow: 0 1px 0 #b9d4e6; }
+  .pad .del { background: #ffd6d6; color: #c62828; box-shadow: 0 4px 0 #e8a0a0; }
+  .pad .ok  { background: #66bb6a; color: #fff; box-shadow: 0 4px 0 #2e7d32; }
+  .keyHint {
+    text-align: center; font-size: .8rem; color: #466;
+    background: rgba(255,255,255,.6); border-radius: 10px; padding: 4px 8px;
+  }
+
+  /* --- 單人版面：小朋友在左、題目在右 --- */
+  .mode-single .unit { display: flex; flex: 1; max-width: 980px; align-items: center; gap: 2vw; }
+  .mode-single .stageWrap svg { width: min(46vh, 100%); height: auto; }
+  .mode-single .ctrl { width: min(430px, 44vw); }
+  .mode-single .question { font-size: clamp(2rem, 4.5vw, 3rem); padding: 20px 10px; }
+  .mode-single .pad button { font-size: 1.9rem; padding: clamp(8px, 1.8vh, 18px) 0; }
+  .mode-single .pad .ok { font-size: 1.6rem; }
+  .mode-single .keyHint { display: none; }
+
+  /* --- 雙人版面：左右兩欄，各自上下排 --- */
+  .mode-duo .unit {
+    display: flex; flex-direction: column; align-items: stretch;
+    flex: 1; max-width: 46vw; gap: 8px;
+  }
+  .mode-duo .stageWrap svg { height: 100%; max-height: 38vh; width: auto; max-width: 100%; }
+  .mode-duo .ctrl { width: 100%; max-width: 360px; align-self: center; }
+  .mode-duo .question { font-size: clamp(1.4rem, 3vw, 2.1rem); padding: 10px 8px; }
+  .mode-duo .pad button { font-size: 1.35rem; padding: clamp(5px, 1.2vh, 12px) 0; }
+  .mode-duo .pad .ok { font-size: 1.15rem; }
+
+  /* ---------- 結束畫面 ---------- */
+  #overScreen {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(20,40,80,.55);
+    align-items: center; justify-content: center;
+  }
+  #overCard {
+    background: #fff; border-radius: 24px; padding: 34px 50px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    box-shadow: 0 16px 50px rgba(0,0,0,.35);
+    animation: popIn .35s ease-out;
+    text-align: center; max-width: 90vw;
+  }
+  @keyframes popIn { 0%{transform:scale(.6);opacity:0;} 100%{transform:scale(1);opacity:1;} }
+  #overCard h2 { color: #1577c2; font-size: 1.9rem; }
+  #overCard .stats { font-size: 1.2rem; color: #333; line-height: 2; }
+  #overCard .stats b { color: #fb8c00; font-size: 1.4rem; }
+  #overCard .newBest { color: #e91e63; font-weight: bold; font-size: 1.05rem; min-height: 1.3em; }
+  #overCard .btns { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+  #overCard button {
+    font-family: inherit; font-size: 1.1rem; font-weight: bold;
+    border: none; border-radius: 14px; padding: 12px 28px; cursor: pointer;
+    color: #fff; transition: transform .1s;
+  }
+  #overCard button:active { transform: translateY(3px); }
+  #nextBtn { background: linear-gradient(180deg,#66bb6a,#43a047); box-shadow: 0 5px 0 #2e7d32; }
+  #menuBtn { background: linear-gradient(180deg,#90a4ae,#78909c); box-shadow: 0 5px 0 #546e7a; }
+
+  /* 手機直向（單人）：上下排列 */
+  @media (max-aspect-ratio: 5/6) {
+    .mode-single .unit { flex-direction: column; align-items: center; gap: 6px; }
+    .mode-single .stageWrap { width: 100%; }
+    .mode-single .stageWrap svg { height: 100%; max-height: 40vh; width: auto; max-width: 90vw; }
+    .mode-single .ctrl { width: min(430px, 96vw); }
+    .mode-single .question { padding: 12px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<button id="musicBtn" title="配樂開關">🎵</button>
+
+<!-- ===== 開始畫面 ===== -->
+<div id="startScreen" class="screen active">
+  <h1><span class="drop">💧</span> 水球數學大挑戰 <span class="drop">💧</span></h1>
+  <p class="subtitle">頭上的水球會越來越大，撐破就輸了！每答對一題，水就會變少。<br>雙人對戰：兩人同時上場，看誰的水球先破！</p>
+
+  <div class="optGroup">
+    <div class="label">遊戲模式</div>
+    <div class="optRow" id="modeRow">
+      <label><input type="radio" name="mode" value="single" checked>👦 單人挑戰</label>
+      <label><input type="radio" name="mode" value="duo">👦👧 雙人對戰</label>
+    </div>
+  </div>
+
+  <div class="optGroup">
+    <div class="label">玩家名字</div>
+    <div class="nameRow">
+      <input type="text" id="name1" maxlength="8" placeholder="玩家 1 的名字">
+      <input type="text" id="name2" maxlength="8" placeholder="玩家 2 的名字" class="hidden">
+    </div>
+  </div>
+
+  <div class="optGroup">
+    <div class="label">選擇運算（可複選）</div>
+    <div class="optRow" id="opsRow">
+      <label><input type="checkbox" value="add" checked>＋ 加法</label>
+      <label><input type="checkbox" value="sub" checked>－ 減法</label>
+      <label><input type="checkbox" value="mul">× 乘法</label>
+      <label><input type="checkbox" value="div">÷ 除法</label>
+    </div>
+  </div>
+
+  <div class="optGroup">
+    <div class="label">難度</div>
+    <div class="optRow" id="diffRow">
+      <label><input type="radio" name="diff" value="easy" checked>🐣 簡單</label>
+      <label><input type="radio" name="diff" value="medium">🐥 中等</label>
+      <label><input type="radio" name="diff" value="hard">🦅 困難</label>
+    </div>
+  </div>
+
+  <div class="warn" id="warnMsg"></div>
+  <button id="startBtn">開始遊戲</button>
+  <div class="best" id="bestLine"></div>
+</div>
+
+<!-- ===== 遊戲畫面 ===== -->
+<div id="gameScreen" class="screen">
+  <div id="topBar"><div class="box">⏱️ <span id="timeTxt">0:00</span></div></div>
+  <div id="units"></div>
+</div>
+
+<!-- ===== 結束畫面 ===== -->
+<div id="overScreen" class="screen">
+  <div id="overCard">
+    <h2 id="overTitle"></h2>
+    <div class="stats" id="overBody"></div>
+    <div class="newBest" id="newBestTxt"></div>
+    <div class="btns">
+      <button id="nextBtn">再玩一次</button>
+      <button id="menuBtn">回主選單</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ====== 遊戲平衡設定（想調難度改這裡） ====== */
+const DIFF = {
+  //        數字範圍   乘除最大數  初始漲速%/s  加速度%/s²  答對扣水%
+  easy:   { range: 10,  mulMax: 5,  fill0: 1.6, fillRamp: 0.030, drain: 22 },
+  medium: { range: 20,  mulMax: 9,  fill0: 2.2, fillRamp: 0.045, drain: 20 },
+  hard:   { range: 100, mulMax: 12, fill0: 3.0, fillRamp: 0.060, drain: 18 },
+};
+const WRONG_PENALTY = 6;   // 答錯時水增加多少 (%)
+const START_LEVEL   = 25;  // 開局水量 (%)
+const ACCENT = ["#1e90d6", "#e53935"];  // 玩家 1 / 玩家 2 代表色
+
+/* ====== 狀態 ====== */
+let mode = "single";
+let players = [];   // { name, level, score, answer, input }
+let ops = [], diff = null;
+let startTime = 0, elapsed = 0;
+let running = false, rafId = 0, lastT = 0;
+
+/* ====== 音效（WebAudio 合成，無外部檔案） ====== */
+let actx = null;
+function getCtx() {
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+function beep(freq, dur, type = "sine", vol = .25) {
+  try {
+    const ctx = getCtx();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur);
+  } catch (e) {}
+}
+const sndCorrect = () => { beep(660, .12, "sine"); setTimeout(() => beep(880, .18, "sine"), 110); };
+const sndWrong   = () => beep(160, .3, "sawtooth", .18);
+const sndPop     = () => { beep(90, .4, "square", .35); setTimeout(() => beep(300, .25, "sine", .2), 60); };
+
+/* ====== 背景配樂（WebAudio 合成的輕快小曲，8 小節循環） ====== */
+// 音名轉頻率（A4 = 440Hz）
+const SEMI = { C: 0, "C#": 1, D: 2, "D#": 3, E: 4, F: 5, "F#": 6, G: 7, "G#": 8, A: 9, "A#": 10, B: 11 };
+const nf = n => {
+  const m = /^([A-G]#?)(\d)$/.exec(n);
+  return 440 * Math.pow(2, (SEMI[m[1]] - 9) / 12 + (+m[2] - 4));
+};
+// 每小節 8 個八分音符、共 8 小節（0 = 休止）
+// 和弦進行：C → G → Am → F → C → G → F → G
+const TRACK_MELODY = [
+  "C5",0,"E5",0,"G5",0,"E5",0,   "D5",0,"G4",0,"B4",0,"D5",0,
+  "C5",0,"A4",0,"C5",0,"E5",0,   "F5",0,"E5",0,"D5",0,"C5",0,
+  "E5",0,0,"C5","G4",0,"C5",0,   "D5",0,0,"B4","G4",0,"B4",0,
+  "A4",0,"C5",0,"F5",0,"E5",0,   "D5",0,0,0,"G5",0,0,0,
+];
+const TRACK_BASS = [
+  "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+  "A2",0,"A2",0,"E3",0,"A2",0,   "F2",0,"F2",0,"C3",0,"F2",0,
+  "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+  "F2",0,"F2",0,"C3",0,"F2",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+];
+const CHORDS = [  // 每小節一組三和弦，在第 3、7 個八分音符輕撥
+  ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","E4"], ["A3","C4","F4"],
+  ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","F4"], ["B3","D4","G4"],
+];
+const STEPS = TRACK_MELODY.length;  // 64
+
+// 跨分頁協調：同一時間只允許一個頁面播配樂（多開分頁/預覽視窗也不會重疊）
+const MUSIC_ID = Math.random().toString(36).slice(2);
+const MCH = (() => { try { return new BroadcastChannel("wb_music_ch"); } catch (e) { return null; } })();
+
+const music = {
+  TEMPO: 116,    // 曲速 BPM（越大越快）
+  VOL: 0.5,      // 配樂總音量（0~1）
+  enabled: localStorage.getItem("wb_music") !== "0",
+  timer: null, step: 0, nextT: 0, bus: null, noiseBuf: null,
+  get stepDur() { return 60 / this.TEMPO / 2; },  // 一個八分音符的秒數
+  initAudio() {
+    getCtx();
+    if (this.bus) return;
+    this.bus = actx.createGain();          // 配樂總音量（不影響答題音效）
+    this.bus.gain.value = this.VOL;
+    this.bus.connect(actx.destination);
+    const len = Math.floor(actx.sampleRate * 0.06);  // 打擊樂用白噪音
+    this.noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+    const d = this.noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  },
+  start() {
+    if (!this.enabled || this.timer) return;
+    try { this.initAudio(); } catch (e) { return; }
+    this.bus.gain.cancelScheduledValues(actx.currentTime);
+    this.bus.gain.value = this.VOL;
+    if (MCH) MCH.postMessage({ t: "takeover", id: MUSIC_ID });  // 其他分頁讓出播放權
+    this.nextT = actx.currentTime + 0.08;
+    this.timer = setInterval(() => this.tick(), 120);
+  },
+  tick() {
+    const now = actx.currentTime;
+    // 分頁切到背景時 setInterval 會被瀏覽器降速，排程一旦落後就直接跳到現在，
+    // 否則恢復時會把欠的音符一口氣疊在同一時間播出（聽起來像多重播放）
+    if (this.nextT < now - 0.05) {
+      this.step = (this.step + Math.ceil((now - this.nextT) / this.stepDur)) % STEPS;
+      this.nextT = now + 0.05;
+    }
+    while (this.nextT < now + 0.35) {
+      this.playStep(this.step, this.nextT);
+      this.step = (this.step + 1) % STEPS;
+      this.nextT += this.stepDur;
+    }
+  },
+  note(freq, t, dur, type, vol) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(this.bus);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  playStep(s, t) {
+    const sd = this.stepDur;
+    const m = TRACK_MELODY[s];
+    if (m) {  // 主旋律：三角波為主、一點方波添色
+      this.note(nf(m), t, sd * 1.7, "triangle", 0.13);
+      this.note(nf(m), t, sd * 1.1, "square", 0.025);
+    }
+    const b = TRACK_BASS[s];
+    if (b) this.note(nf(b), t, sd * 1.6, "triangle", 0.16);
+    const inBar = s % 8;
+    if (inBar === 2 || inBar === 6) {  // 和弦輕撥
+      for (const cn of CHORDS[(s / 8) | 0]) this.note(nf(cn), t, sd * 2.2, "sine", 0.035);
+    }
+    if (inBar === 0 || inBar === 4) {  // 大鼓
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(45, t + 0.1);
+      g.gain.setValueAtTime(0.22, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      o.connect(g).connect(this.bus);
+      o.start(t); o.stop(t + 0.15);
+    }
+    if (inBar % 2 === 1) {  // 反拍鈸（白噪音）
+      const src = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+      src.buffer = this.noiseBuf;
+      f.type = "highpass"; f.frequency.value = 7000;
+      g.gain.setValueAtTime(0.05, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      src.connect(f).connect(g).connect(this.bus);
+      src.start(t);
+    }
+  },
+  stop() {
+    clearInterval(this.timer); this.timer = null;
+    // 連已排進佇列的音符也立刻靜音，按下按鈕馬上安靜
+    if (this.bus && actx) {
+      this.bus.gain.cancelScheduledValues(actx.currentTime);
+      this.bus.gain.value = 0;
+    }
+  },
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem("wb_music", this.enabled ? "1" : "0");
+    if (this.enabled) {
+      if (MCH) MCH.postMessage({ t: "unmute", id: MUSIC_ID });
+      this.start();
+    } else {
+      this.stop();
+      if (MCH) MCH.postMessage({ t: "mute", id: MUSIC_ID });  // 所有分頁一起靜音
+    }
+    updateMusicBtn();
+  }
+};
+function updateMusicBtn() {
+  $("musicBtn").textContent = music.enabled ? "🎵" : "🔇";
+  $("musicBtn").classList.toggle("off", !music.enabled);
+}
+$("musicBtn").addEventListener("click", () => music.toggle());
+// 瀏覽器規定要先有互動才能播聲音：第一次點擊任何地方就開始播
+document.addEventListener("pointerdown", e => {
+  if (e.target.id !== "musicBtn") music.start();
+});
+// 切到背景就暫停排程，回到前景再續播
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) music.stop();
+  else if (music.enabled) music.start();
+});
+// 來自其他分頁的訊息：讓出播放權／全體靜音／恢復設定
+if (MCH) MCH.onmessage = e => {
+  const msg = e.data;
+  if (!msg || msg.id === MUSIC_ID) return;
+  if (msg.t === "takeover") music.stop();              // 別的分頁接手播放，自己閉嘴（保持 enabled）
+  else if (msg.t === "mute") { music.enabled = false; music.stop(); localStorage.setItem("wb_music", "0"); updateMusicBtn(); }
+  else if (msg.t === "unmute") { music.enabled = true; localStorage.setItem("wb_music", "1"); updateMusicBtn(); }  // 由對方播，自己不出聲
+};
+// 備援：跨分頁同步開關狀態（storage 事件）
+window.addEventListener("storage", e => {
+  if (e.key !== "wb_music") return;
+  music.enabled = e.newValue !== "0";
+  if (!music.enabled) music.stop();
+  updateMusicBtn();
+});
+updateMusicBtn();
+
+/* ====== 舞台（小朋友 + 水球）SVG 模板，每位玩家一份 ====== */
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function stageSVG(i, name) {
+  const color = ACCENT[i];
+  return `
+  <svg id="kidSvg_${i}" viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="balloonClip_${i}">
+        <path d="M200 30 C 130 30 85 95 85 165 C 85 240 150 285 200 285 C 250 285 315 240 315 165 C 315 95 270 30 200 30 Z"/>
+      </clipPath>
+      <radialGradient id="waterGrad_${i}" cx="40%" cy="35%" r="80%">
+        <stop offset="0%" stop-color="#7fd4ff"/>
+        <stop offset="100%" stop-color="#1e90d6"/>
+      </radialGradient>
+    </defs>
+
+    <!-- 地面陰影 -->
+    <ellipse cx="200" cy="545" rx="95" ry="14" fill="rgba(0,0,0,.12)"/>
+
+    <!-- 小朋友 -->
+    <g>
+      <rect x="172" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
+      <rect x="208" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
+      <ellipse cx="180" cy="535" rx="20" ry="10" fill="#5d4037"/>
+      <ellipse cx="220" cy="535" rx="20" ry="10" fill="#5d4037"/>
+      <path d="M160 400 Q160 380 200 380 Q240 380 240 400 L236 480 L164 480 Z" fill="#ffca28"/>
+      <path d="M168 400 Q130 380 118 330" stroke="#ffca28" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <path d="M232 400 Q270 380 282 330" stroke="#ffca28" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <circle cx="118" cy="326" r="11" fill="#ffe0b2"/>
+      <circle cx="282" cy="326" r="11" fill="#ffe0b2"/>
+      <circle cx="200" cy="345" r="46" fill="#ffe0b2"/>
+      <path d="M156 338 Q158 296 200 294 Q242 296 244 338 Q236 312 200 312 Q164 312 156 338 Z" fill="#6d4c41"/>
+      <g id="faceHappy_${i}">
+        <circle cx="184" cy="342" r="5" fill="#333"/>
+        <circle cx="216" cy="342" r="5" fill="#333"/>
+        <path d="M186 362 Q200 374 214 362" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"/>
+      </g>
+      <g id="faceWorried_${i}" style="display:none">
+        <circle cx="184" cy="342" r="6" fill="#333"/>
+        <circle cx="216" cy="342" r="6" fill="#333"/>
+        <ellipse cx="200" cy="366" rx="9" ry="11" fill="#333"/>
+        <path d="M170 326 L194 332 M230 326 L206 332" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+      </g>
+      <g id="faceSoaked_${i}" style="display:none">
+        <path d="M176 338 L192 348 M192 338 L176 348" stroke="#333" stroke-width="4" stroke-linecap="round"/>
+        <path d="M208 338 L224 348 M224 338 L208 348" stroke="#333" stroke-width="4" stroke-linecap="round"/>
+        <path d="M188 370 Q200 360 212 370" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"/>
+      </g>
+      <circle cx="172" cy="356" r="7" fill="#ffab91" opacity=".7"/>
+      <circle cx="228" cy="356" r="7" fill="#ffab91" opacity=".7"/>
+    </g>
+
+    <!-- 水球（以 200,160 為中心縮放） -->
+    <g id="balloonG_${i}">
+      <g id="balloonScale_${i}">
+        <path d="M196 283 Q200 292 204 283 Q208 295 200 299 Q192 295 196 283" fill="#0d6eb8"/>
+        <path id="skin_${i}" d="M200 30 C 130 30 85 95 85 165 C 85 240 150 285 200 285 C 250 285 315 240 315 165 C 315 95 270 30 200 30 Z"
+              fill="#cfeeff" stroke="#0d6eb8" stroke-width="5"/>
+        <g clip-path="url(#balloonClip_${i})">
+          <rect id="waterRect_${i}" x="85" y="285" width="230" height="260" fill="url(#waterGrad_${i})"/>
+          <path id="waveP_${i}" d="" fill="#5fc4f0" opacity=".85"/>
+        </g>
+        <ellipse cx="150" cy="95" rx="26" ry="40" fill="rgba(255,255,255,.55)" transform="rotate(-25 150 95)"/>
+      </g>
+    </g>
+
+    <!-- 爆破水花 -->
+    <g id="splash_${i}" style="display:none"></g>
+
+    <!-- 腳下名字 -->
+    <text x="200" y="590" text-anchor="middle" font-size="34" font-weight="bold"
+          fill="${color}" stroke="#fff" stroke-width="5" paint-order="stroke"
+          style="font-family:inherit">${esc(name)}</text>
+  </svg>`;
+}
+
+const PAD_BTNS = `
+  <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+  <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+  <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+  <button class="del" data-k="del">⌫</button><button data-k="0">0</button><button class="ok" data-k="ok">確定</button>`;
+const KEY_HINTS = [
+  "⌨ 左邊玩家：上排數字 1-0 ⋅ <b>Q</b> 刪除 ⋅ <b>空白鍵</b> 確定",
+  "⌨ 右邊玩家：右側九宮格 ⋅ <b>.</b> 刪除 ⋅ <b>Enter</b> 確定",
+];
+function unitHTML(i, name) {
+  return `
+  <div class="unit" data-p="${i}">
+    <div class="stageWrap">${stageSVG(i, name)}</div>
+    <div class="ctrl">
+      <div class="uhud"><div class="box">✅ 答對：<span id="scoreTxt_${i}">0</span></div></div>
+      <div class="question" id="question_${i}"><span id="qTxt_${i}"></span> <span class="ans" id="ansTxt_${i}">&nbsp;</span></div>
+      <div class="pad" data-player="${i}">${PAD_BTNS}</div>
+      <div class="keyHint">${KEY_HINTS[i]}</div>
+    </div>
+  </div>`;
+}
+
+/* ====== 題目產生 ====== */
+const rnd = n => Math.floor(Math.random() * (n + 1));
+function genQuestion(i) {
+  const p = players[i];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  const d = diff;
+  let a, b, text;
+  if (op === "add") {
+    a = rnd(d.range); b = rnd(d.range - a);
+    p.answer = a + b; text = `${a} ＋ ${b} ＝`;
+  } else if (op === "sub") {
+    a = rnd(d.range); b = rnd(a);
+    p.answer = a - b; text = `${a} － ${b} ＝`;
+  } else if (op === "mul") {
+    a = 1 + rnd(d.mulMax - 1); b = 1 + rnd(d.mulMax - 1);
+    p.answer = a * b; text = `${a} × ${b} ＝`;
+  } else {
+    b = 1 + rnd(d.mulMax - 1); p.answer = 1 + rnd(d.mulMax - 1);
+    a = b * p.answer; text = `${a} ÷ ${b} ＝`;
+  }
+  $("qTxt_" + i).textContent = text;
+  p.input = "";
+  renderInput(i);
+}
+function renderInput(i) {
+  $("ansTxt_" + i).innerHTML = players[i].input === "" ? "&nbsp;" : players[i].input;
+}
+
+/* ====== 水球繪製 ====== */
+function drawBalloon(i, t) {
+  const level = players[i].level;
+  // 縮放：水量 0% → 0.55 倍，100% → 1.18 倍
+  const s = 0.55 + (level / 100) * 0.63;
+  // 快爆時抖動
+  const danger = level > 75 ? (level - 75) / 25 : 0;
+  const jx = danger * Math.sin(t / 38 + i * 7) * 4;
+  const jy = danger * Math.cos(t / 31 + i * 7) * 3;
+  $("balloonScale_" + i).setAttribute("transform",
+    `translate(${200 + jx} ${160 + jy}) scale(${s}) translate(-200 -160)`);
+
+  // 水位（balloon 內 y: 30(滿) ~ 285(空)）
+  const topY = 285 - (level / 100) * 255;
+  $("waterRect_" + i).setAttribute("y", topY);
+  // 波浪
+  const amp = 5 + danger * 6;
+  const ph = t / 300 + i * 3;
+  let dPath = `M85 ${topY}`;
+  for (let x = 85; x <= 315; x += 10) {
+    dPath += ` L${x} ${topY + Math.sin(x / 22 + ph) * amp}`;
+  }
+  dPath += ` L315 ${topY + 30} L85 ${topY + 30} Z`;
+  $("waveP_" + i).setAttribute("d", dPath);
+
+  // 球皮快爆變紅
+  $("skin_" + i).setAttribute("fill",
+    danger > 0 ? `rgb(${207 + danger * 48},${238 - danger * 90},${255 - danger * 100})` : "#cfeeff");
+
+  // 表情
+  $("faceHappy_" + i).style.display   = level <= 70 ? "" : "none";
+  $("faceWorried_" + i).style.display = level > 70 ? "" : "none";
+}
+
+/* ====== 爆破動畫 ====== */
+function explode(i) {
+  sndPop();
+  $("balloonG_" + i).style.display = "none";
+  $("faceHappy_" + i).style.display = "none";
+  $("faceWorried_" + i).style.display = "none";
+  $("faceSoaked_" + i).style.display = "";
+  const g = $("splash_" + i);
+  g.style.display = "";
+  g.innerHTML = "";
+  const drops = [];
+  for (let k = 0; k < 36; k++) {
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const ang = Math.random() * Math.PI * 2;
+    const sp = 3 + Math.random() * 7;
+    c.setAttribute("r", 4 + Math.random() * 9);
+    c.setAttribute("fill", k % 3 ? "#4fc3f7" : "#1e90d6");
+    g.appendChild(c);
+    drops.push({ c, x: 200, y: 160, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 3 });
+  }
+  let frames = 0;
+  (function anim() {
+    frames++;
+    for (const d of drops) {
+      d.x += d.vx; d.y += d.vy; d.vy += 0.35;
+      d.c.setAttribute("cx", d.x); d.c.setAttribute("cy", d.y);
+      d.c.setAttribute("opacity", Math.max(0, 1 - frames / 55));
+    }
+    if (frames < 60) requestAnimationFrame(anim);
+    else g.style.display = "none";
+  })();
+}
+
+/* ====== 主迴圈 ====== */
+const fmt = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+function loop(t) {
+  if (!running) return;
+  const dt = lastT ? Math.min((t - lastT) / 1000, .1) : 0;
+  lastT = t;
+  elapsed = (performance.now() - startTime) / 1000;
+
+  const rate = diff.fill0 + diff.fillRamp * elapsed;  // 越久漲越快
+  for (const p of players) p.level = Math.min(100, p.level + rate * dt);
+  players.forEach((p, i) => drawBalloon(i, t));
+  $("timeTxt").textContent = fmt(elapsed);
+
+  const popped = [];
+  players.forEach((p, i) => { if (p.level >= 100) popped.push(i); });
+  if (popped.length) { gameOver(popped); return; }
+  rafId = requestAnimationFrame(loop);
+}
+
+/* ====== 答題 ====== */
+function submit(i) {
+  if (!running) return;
+  const p = players[i];
+  if (p.input === "") return;
+  const q = $("question_" + i);
+  q.classList.remove("correct", "wrong");
+  void q.offsetWidth; // 重新觸發動畫
+  if (parseInt(p.input, 10) === p.answer) {
+    p.score++;
+    $("scoreTxt_" + i).textContent = p.score;
+    p.level = Math.max(3, p.level - diff.drain);
+    q.classList.add("correct");
+    sndCorrect();
+    genQuestion(i);
+  } else {
+    p.level = Math.min(100, p.level + WRONG_PENALTY);
+    q.classList.add("wrong");
+    sndWrong();
+    p.input = "";
+    renderInput(i);
+  }
+}
+function pressKey(i, k) {
+  if (!running) return;
+  const p = players[i];
+  if (k === "ok") submit(i);
+  else if (k === "del") { p.input = p.input.slice(0, -1); renderInput(i); }
+  else if (p.input.length < 4) { p.input += k; renderInput(i); }
+}
+
+/* 鍵盤：單人＝任何數字鍵；雙人＝左玩家上排數字/Q/空白鍵，右玩家九宮格/./Enter */
+document.addEventListener("keydown", e => {
+  if (!running) return;
+  if (mode === "single") {
+    if (e.key >= "0" && e.key <= "9") pressKey(0, e.key);
+    else if (e.key === "Enter") { e.preventDefault(); pressKey(0, "ok"); }
+    else if (e.key === "Backspace") { e.preventDefault(); pressKey(0, "del"); }
+    return;
+  }
+  const c = e.code;
+  if (/^Digit\d$/.test(c))        { pressKey(0, c.slice(5)); }
+  else if (c === "Space")         { e.preventDefault(); pressKey(0, "ok"); }
+  else if (c === "KeyQ")          { pressKey(0, "del"); }
+  else if (/^Numpad\d$/.test(c))  { pressKey(1, c.slice(6)); }
+  else if (c === "NumpadEnter" || c === "Enter") { e.preventDefault(); pressKey(1, "ok"); }
+  else if (c === "NumpadDecimal" || c === "Backspace") { e.preventDefault(); pressKey(1, "del"); }
+});
+
+/* ====== 流程 ====== */
+function bestKey() {
+  const d = document.querySelector('#diffRow input:checked').value;
+  return "waterballoon_best_" + d;
+}
+function showBest() {
+  const b = localStorage.getItem(bestKey());
+  $("bestLine").textContent = b ? `🏆 此難度單人最佳紀錄：${b} 題` : "";
+}
+$("diffRow").addEventListener("change", showBest);
+showBest();
+
+// 雙人模式才顯示第二個名字欄
+$("modeRow").addEventListener("change", () => {
+  const duo = document.querySelector('#modeRow input:checked').value === "duo";
+  $("name2").classList.toggle("hidden", !duo);
+});
+
+// 記住上次輸入的名字
+$("name1").value = localStorage.getItem("wb_name1") || "";
+$("name2").value = localStorage.getItem("wb_name2") || "";
+
+function startGame() {
+  ops = [...document.querySelectorAll("#opsRow input:checked")].map(c => c.value);
+  if (ops.length === 0) { $("warnMsg").textContent = "至少要選一種運算喔！"; return; }
+  $("warnMsg").textContent = "";
+
+  mode = document.querySelector('#modeRow input:checked').value;
+  diff = DIFF[document.querySelector('#diffRow input:checked').value];
+  const names = [
+    $("name1").value.trim() || "玩家 1",
+    $("name2").value.trim() || "玩家 2",
+  ];
+  localStorage.setItem("wb_name1", $("name1").value.trim());
+  localStorage.setItem("wb_name2", $("name2").value.trim());
+
+  const n = mode === "duo" ? 2 : 1;
+  players = Array.from({ length: n }, (_, i) => ({
+    name: names[i], level: START_LEVEL, score: 0, answer: 0, input: "",
+  }));
+
+  // 建立舞台
+  $("units").innerHTML = players.map((p, i) => unitHTML(i, p.name)).join("");
+  $("gameScreen").classList.toggle("mode-duo", n === 2);
+  $("gameScreen").classList.toggle("mode-single", n === 1);
+  document.querySelectorAll("#units .pad").forEach(pad => {
+    pad.addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (b) pressKey(+pad.dataset.player, b.dataset.k);
+    });
+  });
+
+  $("timeTxt").textContent = "0:00";
+  $("startScreen").classList.remove("active");
+  $("overScreen").classList.remove("active");
+  $("gameScreen").classList.add("active");
+
+  players.forEach((_, i) => genQuestion(i));
+  elapsed = 0; lastT = 0;
+  startTime = performance.now();
+  running = true;
+  rafId = requestAnimationFrame(loop);
+}
+
+function gameOver(popped) {
+  running = false;
+  cancelAnimationFrame(rafId);
+  const t = performance.now();
+  players.forEach((_, i) => drawBalloon(i, t));
+  popped.forEach(i => explode(i));
+  setTimeout(() => showFinal(popped), 900);
+}
+
+function showFinal(popped) {
+  if (mode === "single") {
+    const p = players[0];
+    $("overTitle").textContent = "💥 水球破掉啦！";
+    $("overBody").innerHTML =
+      `${esc(p.name)} 答對：<b>${p.score}</b> 題<br>撐了：<b>${fmt(elapsed)}</b>`;
+    const key = bestKey();
+    const best = parseInt(localStorage.getItem(key) || "0", 10);
+    if (p.score > best) {
+      localStorage.setItem(key, p.score);
+      $("newBestTxt").textContent = "🎉 新紀錄！";
+    } else {
+      $("newBestTxt").textContent = best ? `最佳紀錄：${best} 題` : "";
+    }
+  } else {
+    const [p0, p1] = players;
+    if (popped.length === 2) {
+      $("overTitle").textContent = "🤝 平手！兩顆水球同時破了！";
+    } else {
+      const loser = players[popped[0]], winner = players[1 - popped[0]];
+      $("overTitle").textContent = `🏆 ${esc(winner.name)} 獲勝！`;
+    }
+    const loserNote = popped.length === 1 ? `${esc(players[popped[0]].name)} 的水球先破了！<br>` : "";
+    $("overBody").innerHTML =
+      loserNote +
+      `${esc(p0.name)}：答對 <b>${p0.score}</b> 題 ・ ${esc(p1.name)}：答對 <b>${p1.score}</b> 題<br>` +
+      `本局時間 <b>${fmt(elapsed)}</b>`;
+    $("newBestTxt").textContent = "";
+  }
+  $("overScreen").classList.add("active");
+}
+
+$("startBtn").addEventListener("click", startGame);
+$("nextBtn").addEventListener("click", startGame);
+$("menuBtn").addEventListener("click", () => {
+  $("overScreen").classList.remove("active");
+  $("gameScreen").classList.remove("active");
+  $("startScreen").classList.add("active");
+  showBest();
+});
+</script>
+</body>
+</html>

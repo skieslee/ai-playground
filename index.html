@@ -2,17 +2,21 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>水球數學大挑戰</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
   input[type=text] { user-select: text; }
-  html, body { height: 100%; }
+  html, body { height: 100%; height: 100dvh; }
   body {
     font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
     background: linear-gradient(180deg, #aee7ff 0%, #d8f6ff 55%, #b8f0c8 55.5%, #8fdfa6 100%);
     display: flex; align-items: center; justify-content: center;
     overflow: hidden;
+    /* iPhone home indicator / notch 安全區 */
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   .screen { display: none; }
@@ -76,18 +80,27 @@
 
   /* ---------- 遊戲畫面 ---------- */
   #gameScreen {
-    width: 100vw; height: 100vh;
+    width: 100vw; height: 100dvh;
     flex-direction: column; align-items: center;
     padding: 10px;
   }
   #topBar {
     flex: 0 0 auto; margin-bottom: 4px;
     font-size: 1.15rem; font-weight: bold; color: #1565a0;
+    display: flex; align-items: center; gap: 10px;
   }
   #topBar .box {
     background: rgba(255,255,255,.85); border-radius: 12px; padding: 6px 20px;
     box-shadow: 0 3px 8px rgba(0,60,120,.15);
   }
+  #quitBtn {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid #e53935; background: rgba(255,255,255,.92);
+    font-size: 1.2rem; cursor: pointer; color: #e53935; font-weight: bold;
+    box-shadow: 0 3px 8px rgba(180,0,0,.18); transition: transform .1s;
+    flex-shrink: 0;
+  }
+  #quitBtn:active { transform: scale(.92); }
   #units {
     flex: 1; min-height: 0; width: 100%;
     display: flex; justify-content: center; gap: 2vw;
@@ -251,7 +264,10 @@
 
 <!-- ===== 遊戲畫面 ===== -->
 <div id="gameScreen" class="screen">
-  <div id="topBar"><div class="box">⏱️ <span id="timeTxt">0:00</span></div></div>
+  <div id="topBar">
+    <button id="quitBtn" title="回主選單">✕</button>
+    <div class="box">⏱️ <span id="timeTxt">0:00</span></div>
+  </div>
   <div id="units"></div>
 </div>
 
@@ -451,10 +467,17 @@ function updateMusicBtn() {
   $("musicBtn").classList.toggle("off", !music.enabled);
 }
 $("musicBtn").addEventListener("click", () => music.toggle());
-// 瀏覽器規定要先有互動才能播聲音：第一次點擊任何地方就開始播
-document.addEventListener("pointerdown", e => {
-  if (e.target.id !== "musicBtn") music.start();
-});
+// 瀏覽器規定要先有互動才能播聲音
+// iOS Safari 需要在 touchstart/touchend 同一 callstack 裡 resume AudioContext
+function unlockAudio() {
+  if (!actx) {
+    try { getCtx(); } catch (e) { return; }
+  }
+  if (actx.state === "suspended") actx.resume();
+  music.start();
+}
+document.addEventListener("pointerdown", e => { if (e.target.id !== "musicBtn") unlockAudio(); });
+document.addEventListener("touchstart",  e => { if (e.target.id !== "musicBtn") unlockAudio(); }, { passive: true });
 // 切到背景就暫停排程，回到前景再續播
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) music.stop();
@@ -843,14 +866,19 @@ function showFinal(popped) {
   $("overScreen").classList.add("active");
 }
 
-$("startBtn").addEventListener("click", startGame);
-$("nextBtn").addEventListener("click", startGame);
-$("menuBtn").addEventListener("click", () => {
+function goToMenu() {
+  running = false;
+  cancelAnimationFrame(rafId);
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.remove("active");
   $("startScreen").classList.add("active");
   showBest();
-});
+}
+
+$("startBtn").addEventListener("click", startGame);
+$("nextBtn").addEventListener("click", startGame);
+$("menuBtn").addEventListener("click", goToMenu);
+$("quitBtn").addEventListener("click", goToMenu);
 </script>
 </body>
 </html>

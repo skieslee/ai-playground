@@ -86,6 +86,7 @@
   .best { color: #888; font-size: .9rem; }
   .hidden { display: none !important; }
   .diffHint { color: #1577c2; font-size: .85rem; margin-top: 8px; text-align: center; min-height: 1em; }
+  .optRow small { font-size: .72rem; opacity: .75; font-weight: normal; }
 
   /* ---------- 遊戲畫面 ---------- */
   #gameScreen {
@@ -269,6 +270,15 @@
     <div class="diffHint" id="diffHint"></div>
   </div>
 
+  <div class="optGroup hidden" id="friendsGroup">
+    <div class="label">湊十題型</div>
+    <div class="optRow" id="friendsRow">
+      <label><input type="radio" name="friendsMode" value="add">＋ 加法<br><small>A＋?=10</small></label>
+      <label><input type="radio" name="friendsMode" value="sub">－ 減法<br><small>10−A=?</small></label>
+      <label><input type="radio" name="friendsMode" value="mixed" checked>🔀 混合</label>
+    </div>
+  </div>
+
   <div class="warn" id="warnMsg"></div>
   <button id="startBtn">開始遊戲</button>
   <div class="best" id="bestLine"></div>
@@ -316,8 +326,8 @@ const ACCENT = ["#1e90d6", "#e53935"];  // 玩家 1 / 玩家 2 代表色
 
 /* ====== 狀態 ====== */
 let mode = "single";
-let players = [];   // { name, level, score, answer, input }
-let ops = [], diff = null;
+let players = [];   // { name, level, score, answer, input, lastQ }
+let ops = [], diff = null, friendsMode = "mixed";  // friendsMode: add / sub / mixed
 let startTime = 0, elapsed = 0;
 let running = false, rafId = 0, lastT = 0;
 
@@ -729,35 +739,46 @@ function unitHTML(i, name) {
 
 /* ====== 題目產生 ====== */
 const rnd = n => Math.floor(Math.random() * (n + 1));
-function genQuestion(i) {
-  const p = players[i];
-  const d = diff;
-  let pre, post = "";   // 題目分前段、(空格)、後段——讓空格能出現在中間
+// 產生一題（回傳 {pre, post, answer}）；不更動狀態，方便重抽以避免連續重複
+function makeQuestion(d) {
+  let pre, post = "", answer;
   if (d.special === "friends") {
-    // 湊十好朋友：A＋?=10 或 10−A=?
+    // 湊十好朋友：依題型決定加法 A＋?=10 或減法 10−A=?
     const a = rnd(10);   // 0~10
-    p.answer = 10 - a;
-    if (Math.random() < 0.5) { pre = `${a} ＋`; post = `＝ 10`; }  // A ＋ ＿ ＝ 10
-    else                     { pre = `10 － ${a} ＝`; }           // 10 － A ＝ ＿
+    answer = 10 - a;
+    const useAdd = friendsMode === "add" ? true
+                 : friendsMode === "sub" ? false
+                 : Math.random() < 0.5;            // 混合
+    if (useAdd) { pre = `${a} ＋`; post = `＝ 10`; } // A ＋ ＿ ＝ 10
+    else        { pre = `10 － ${a} ＝`; }           // 10 － A ＝ ＿
   } else {
     const op = ops[Math.floor(Math.random() * ops.length)];
     let a, b;
     if (op === "add") {
       a = rnd(d.range); b = rnd(d.range - a);
-      p.answer = a + b; pre = `${a} ＋ ${b} ＝`;
+      answer = a + b; pre = `${a} ＋ ${b} ＝`;
     } else if (op === "sub") {
       a = rnd(d.range); b = rnd(a);
-      p.answer = a - b; pre = `${a} － ${b} ＝`;
+      answer = a - b; pre = `${a} － ${b} ＝`;
     } else if (op === "mul") {
       a = 1 + rnd(d.mulMax - 1); b = 1 + rnd(d.mulMax - 1);
-      p.answer = a * b; pre = `${a} × ${b} ＝`;
+      answer = a * b; pre = `${a} × ${b} ＝`;
     } else {
-      b = 1 + rnd(d.mulMax - 1); p.answer = 1 + rnd(d.mulMax - 1);
-      a = b * p.answer; pre = `${a} ÷ ${b} ＝`;
+      b = 1 + rnd(d.mulMax - 1); answer = 1 + rnd(d.mulMax - 1);
+      a = b * answer; pre = `${a} ÷ ${b} ＝`;
     }
   }
-  $("qPre_" + i).textContent = pre;
-  $("qPost_" + i).textContent = post;
+  return { pre, post, answer };
+}
+function genQuestion(i) {
+  const p = players[i];
+  let q, tries = 0;
+  // 重抽直到和上一題不同（題庫很小時最多試 20 次，避免極端情況卡住）
+  do { q = makeQuestion(diff); } while (q.pre + "|" + q.post === p.lastQ && ++tries < 20);
+  p.lastQ = q.pre + "|" + q.post;
+  p.answer = q.answer;
+  $("qPre_" + i).textContent = q.pre;
+  $("qPost_" + i).textContent = q.post;
   p.input = "";
   renderInput(i);
 }
@@ -948,8 +969,9 @@ function showBest() {
 function onDiffChange() {
   showBest();
   const special = document.querySelector('#diffRow input:checked').value === "friends";
-  $("opsGroup").classList.toggle("hidden", special);   // 好朋友難度不需要選運算
-  $("diffHint").textContent = special ? "🤝 練習湊十：A＋?=10 與 10−A=?，幫小朋友熟悉湊成 10 的好朋友" : "";
+  $("opsGroup").classList.toggle("hidden", special);       // 好朋友難度不選運算，改選湊十題型
+  $("friendsGroup").classList.toggle("hidden", !special);
+  $("diffHint").textContent = special ? "🤝 練習湊成 10 的好朋友，幫小朋友熟悉湊十的數對" : "";
 }
 $("diffRow").addEventListener("change", onDiffChange);
 onDiffChange();
@@ -970,6 +992,7 @@ function startGame() {
   // 「好朋友」難度固定練習湊十，不看運算選擇；其他難度至少要選一種運算
   if (diff.special === "friends") {
     ops = [];
+    friendsMode = document.querySelector('#friendsRow input:checked').value;  // add / sub / mixed
   } else {
     ops = [...document.querySelectorAll("#opsRow input:checked")].map(c => c.value);
     if (ops.length === 0) { $("warnMsg").textContent = "至少要選一種運算喔！"; return; }
@@ -984,7 +1007,7 @@ function startGame() {
 
   const n = mode === "duo" ? 2 : 1;
   players = Array.from({ length: n }, (_, i) => ({
-    name: names[i], level: START_LEVEL, score: 0, answer: 0, input: "",
+    name: names[i], level: START_LEVEL, score: 0, answer: 0, input: "", lastQ: "",
   }));
 
   // 建立舞台

@@ -84,6 +84,8 @@
   #startBtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e65100; }
   .warn { color: #d32f2f; font-size: .9rem; min-height: 1.2em; }
   .best { color: #888; font-size: .9rem; }
+  .hidden { display: none !important; }
+  .diffHint { color: #1577c2; font-size: .85rem; margin-top: 8px; text-align: center; min-height: 1em; }
 
   /* ---------- 遊戲畫面 ---------- */
   #gameScreen {
@@ -246,7 +248,7 @@
     </div>
   </div>
 
-  <div class="optGroup">
+  <div class="optGroup" id="opsGroup">
     <div class="label">選擇運算（可複選）</div>
     <div class="optRow" id="opsRow">
       <label><input type="checkbox" value="add" checked>＋ 加法</label>
@@ -262,7 +264,9 @@
       <label><input type="radio" name="diff" value="easy" checked>🐣 簡單</label>
       <label><input type="radio" name="diff" value="medium">🐥 中等</label>
       <label><input type="radio" name="diff" value="hard">🦅 困難</label>
+      <label><input type="radio" name="diff" value="friends">🤝 湊十好朋友</label>
     </div>
+    <div class="diffHint" id="diffHint"></div>
   </div>
 
   <div class="warn" id="warnMsg"></div>
@@ -302,6 +306,8 @@ const DIFF = {
   easy:   { range: 10,  mulMax: 5,  fill0: 1.6, fillRamp: 0.030, drain: 22 },
   medium: { range: 20,  mulMax: 9,  fill0: 2.2, fillRamp: 0.045, drain: 20 },
   hard:   { range: 100, mulMax: 12, fill0: 3.0, fillRamp: 0.060, drain: 18 },
+  // 特殊難度：練習「湊十的好朋友」，只出 A＋?=10 與 10−A=? 兩種題型
+  friends:{ special: "friends",     fill0: 1.5, fillRamp: 0.025, drain: 24 },
 };
 const WRONG_PENALTY = 6;   // 答錯時水增加多少 (%)
 const START_LEVEL   = 25;  // 開局水量 (%)
@@ -344,46 +350,81 @@ const nf = n => {
   const m = /^([A-G]#?)(\d)$/.exec(n);
   return 440 * Math.pow(2, (SEMI[m[1]] - 9) / 12 + (+m[2] - 4));
 };
-// 每小節 8 個八分音符、共 8 小節（0 = 休止）
-// 和弦進行：C → G → Am → F → C → G → F → G
-const TRACK_MELODY = [
-  "C5",0,"E5",0,"G5",0,"E5",0,   "D5",0,"G4",0,"B4",0,"D5",0,
-  "C5",0,"A4",0,"C5",0,"E5",0,   "F5",0,"E5",0,"D5",0,"C5",0,
-  "E5",0,0,"C5","G4",0,"C5",0,   "D5",0,0,"B4","G4",0,"B4",0,
-  "A4",0,"C5",0,"F5",0,"E5",0,   "D5",0,0,0,"G5",0,0,0,
-];
-const TRACK_BASS = [
-  "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
-  "A2",0,"A2",0,"E3",0,"A2",0,   "F2",0,"F2",0,"C3",0,"F2",0,
-  "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
-  "F2",0,"F2",0,"C3",0,"F2",0,   "G2",0,"G2",0,"D3",0,"G2",0,
-];
-const CHORDS = [  // 每小節一組三和弦，在第 3、7 個八分音符輕撥
-  ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","E4"], ["A3","C4","F4"],
-  ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","F4"], ["B3","D4","G4"],
-];
-const STEPS = TRACK_MELODY.length;  // 64
+// 每小節 8 個八分音符、共 8 小節（0 = 休止）。每首曲子有 melody / bass / chords 三軌
+// + tempo（基本曲速）+ drums（是否打鼓）。遊戲中與選單各用一首。
+const TRACKS = {
+  // 遊戲中：輕快帶鼓（和弦 C→G→Am→F→C→G→F→G）
+  game: {
+    tempo: 116, drums: true,
+    melody: [
+      "C5",0,"E5",0,"G5",0,"E5",0,   "D5",0,"G4",0,"B4",0,"D5",0,
+      "C5",0,"A4",0,"C5",0,"E5",0,   "F5",0,"E5",0,"D5",0,"C5",0,
+      "E5",0,0,"C5","G4",0,"C5",0,   "D5",0,0,"B4","G4",0,"B4",0,
+      "A4",0,"C5",0,"F5",0,"E5",0,   "D5",0,0,0,"G5",0,0,0,
+    ],
+    bass: [
+      "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+      "A2",0,"A2",0,"E3",0,"A2",0,   "F2",0,"F2",0,"C3",0,"F2",0,
+      "C3",0,"C3",0,"G3",0,"C3",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+      "F2",0,"F2",0,"C3",0,"F2",0,   "G2",0,"G2",0,"D3",0,"G2",0,
+    ],
+    chords: [
+      ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","E4"], ["A3","C4","F4"],
+      ["C4","E4","G4"], ["B3","D4","G4"], ["A3","C4","F4"], ["B3","D4","G4"],
+    ],
+  },
+  // 選單：輕柔無鼓、稍慢（和弦 C→Am→F→G→C→Am→F→G）
+  menu: {
+    tempo: 96, drums: false,
+    melody: [
+      "E5",0,"G5",0,"C6",0,"G5",0,   "A5",0,0,0,"G5",0,0,0,
+      "F5",0,"A5",0,"G5",0,"E5",0,   "D5",0,0,0,0,0,0,0,
+      "E5",0,"G5",0,"C6",0,"B5",0,   "A5",0,"G5",0,"E5",0,
+      "D5",0,"F5",0,"E5",0,"D5",0,   "C5",0,0,0,0,0,0,0,
+    ],
+    bass: [
+      "C3",0,0,0,"G3",0,0,0,   "A2",0,0,0,"E3",0,0,0,
+      "F2",0,0,0,"C3",0,0,0,   "G2",0,0,0,"D3",0,0,0,
+      "C3",0,0,0,"G3",0,0,0,   "A2",0,0,0,"E3",0,0,0,
+      "F2",0,0,0,"C3",0,0,0,   "G2",0,0,0,"D3",0,0,0,
+    ],
+    chords: [
+      ["C4","E4","G4"], ["A3","C4","E4"], ["A3","C4","F4"], ["B3","D4","G4"],
+      ["C4","E4","G4"], ["A3","C4","E4"], ["A3","C4","F4"], ["B3","D4","G4"],
+    ],
+  },
+};
 
 // 跨分頁協調：同一時間只允許一個頁面播配樂（多開分頁/預覽視窗也不會重疊）
 const MUSIC_ID = Math.random().toString(36).slice(2);
 const MCH = (() => { try { return new BroadcastChannel("wb_music_ch"); } catch (e) { return null; } })();
 
 const music = {
-  BASE_TEMPO: 116, // 正常曲速 BPM
   MAX_TEMPO:  184, // 危險時最快 BPM（水位 100% 時）
   DANGER_LV:  DANGER_START,  // 超過此水位（%）開始加速
-  TEMPO: 116,      // 當前曲速（遊戲迴圈動態更新）
   VOL: 0.5,        // 配樂總音量（0~1）
+  cur: TRACKS.menu,    // 當前曲目
+  baseTempo: TRACKS.menu.tempo,  // 當前曲目的基本曲速
+  TEMPO: TRACKS.menu.tempo,      // 當前曲速（遊戲迴圈動態更新）
   enabled: localStorage.getItem("wb_music") !== "0",
   timer: null, step: 0, nextT: 0, bus: null, noiseBuf: null,
   get stepDur() { return 60 / this.TEMPO / 2; },  // 一個八分音符的秒數
+  // 切換曲目（選單 / 遊戲）
+  setTrack(name) {
+    const tr = TRACKS[name];
+    if (!tr || this.cur === tr) return;
+    this.cur = tr;
+    this.baseTempo = tr.tempo;
+    this.TEMPO = tr.tempo;
+    this.step = 0;
+  },
   // 根據最高水位更新曲速（在遊戲主迴圈呼叫）
   setDanger(maxLevel) {
     if (maxLevel <= this.DANGER_LV) {
-      this.TEMPO = this.BASE_TEMPO;
+      this.TEMPO = this.baseTempo;
     } else {
       const t = (maxLevel - this.DANGER_LV) / (100 - this.DANGER_LV); // 0→1
-      this.TEMPO = this.BASE_TEMPO + t * (this.MAX_TEMPO - this.BASE_TEMPO);
+      this.TEMPO = this.baseTempo + t * (this.MAX_TEMPO - this.baseTempo);
     }
   },
   initAudio() {
@@ -420,13 +461,14 @@ const music = {
     const now = actx.currentTime;
     // 分頁切到背景時 setInterval 會被瀏覽器降速，排程一旦落後就直接跳到現在，
     // 否則恢復時會把欠的音符一口氣疊在同一時間播出（聽起來像多重播放）
+    const steps = this.cur.melody.length;
     if (this.nextT < now - 0.05) {
-      this.step = (this.step + Math.ceil((now - this.nextT) / this.stepDur)) % STEPS;
+      this.step = (this.step + Math.ceil((now - this.nextT) / this.stepDur)) % steps;
       this.nextT = now + 0.05;
     }
     while (this.nextT < now + 0.35) {
       this.playStep(this.step, this.nextT);
-      this.step = (this.step + 1) % STEPS;
+      this.step = (this.step + 1) % steps;
       this.nextT += this.stepDur;
     }
   },
@@ -440,18 +482,19 @@ const music = {
     o.start(t); o.stop(t + dur + 0.05);
   },
   playStep(s, t) {
-    const sd = this.stepDur;
-    const m = TRACK_MELODY[s];
+    const sd = this.stepDur, cur = this.cur;
+    const m = cur.melody[s];
     if (m) {  // 主旋律：三角波為主、一點方波添色
       this.note(nf(m), t, sd * 1.7, "triangle", 0.13);
       this.note(nf(m), t, sd * 1.1, "square", 0.025);
     }
-    const b = TRACK_BASS[s];
+    const b = cur.bass[s];
     if (b) this.note(nf(b), t, sd * 1.6, "triangle", 0.16);
     const inBar = s % 8;
     if (inBar === 2 || inBar === 6) {  // 和弦輕撥
-      for (const cn of CHORDS[(s / 8) | 0]) this.note(nf(cn), t, sd * 2.2, "sine", 0.035);
+      for (const cn of cur.chords[(s / 8) | 0]) this.note(nf(cn), t, sd * 2.2, "sine", 0.035);
     }
+    if (!cur.drums) return;  // 選單曲目不打鼓
     if (inBar === 0 || inBar === 4) {  // 大鼓
       const o = actx.createOscillator(), g = actx.createGain();
       o.type = "sine";
@@ -677,7 +720,7 @@ function unitHTML(i, name) {
     <div class="stageWrap">${stageSVG(i, name)}</div>
     <div class="ctrl">
       <div class="uhud"><div class="box">✅ 答對：<span id="scoreTxt_${i}">0</span></div></div>
-      <div class="question" id="question_${i}"><span id="qTxt_${i}"></span> <span class="ans" id="ansTxt_${i}">&nbsp;</span></div>
+      <div class="question" id="question_${i}"><span id="qPre_${i}"></span> <span class="ans" id="ansTxt_${i}">&nbsp;</span> <span id="qPost_${i}"></span></div>
       <div class="pad" data-player="${i}">${PAD_BTNS}</div>
       <div class="keyHint">${KEY_HINTS[i]}</div>
     </div>
@@ -688,23 +731,33 @@ function unitHTML(i, name) {
 const rnd = n => Math.floor(Math.random() * (n + 1));
 function genQuestion(i) {
   const p = players[i];
-  const op = ops[Math.floor(Math.random() * ops.length)];
   const d = diff;
-  let a, b, text;
-  if (op === "add") {
-    a = rnd(d.range); b = rnd(d.range - a);
-    p.answer = a + b; text = `${a} ＋ ${b} ＝`;
-  } else if (op === "sub") {
-    a = rnd(d.range); b = rnd(a);
-    p.answer = a - b; text = `${a} － ${b} ＝`;
-  } else if (op === "mul") {
-    a = 1 + rnd(d.mulMax - 1); b = 1 + rnd(d.mulMax - 1);
-    p.answer = a * b; text = `${a} × ${b} ＝`;
+  let pre, post = "";   // 題目分前段、(空格)、後段——讓空格能出現在中間
+  if (d.special === "friends") {
+    // 湊十好朋友：A＋?=10 或 10−A=?
+    const a = rnd(10);   // 0~10
+    p.answer = 10 - a;
+    if (Math.random() < 0.5) { pre = `${a} ＋`; post = `＝ 10`; }  // A ＋ ＿ ＝ 10
+    else                     { pre = `10 － ${a} ＝`; }           // 10 － A ＝ ＿
   } else {
-    b = 1 + rnd(d.mulMax - 1); p.answer = 1 + rnd(d.mulMax - 1);
-    a = b * p.answer; text = `${a} ÷ ${b} ＝`;
+    const op = ops[Math.floor(Math.random() * ops.length)];
+    let a, b;
+    if (op === "add") {
+      a = rnd(d.range); b = rnd(d.range - a);
+      p.answer = a + b; pre = `${a} ＋ ${b} ＝`;
+    } else if (op === "sub") {
+      a = rnd(d.range); b = rnd(a);
+      p.answer = a - b; pre = `${a} － ${b} ＝`;
+    } else if (op === "mul") {
+      a = 1 + rnd(d.mulMax - 1); b = 1 + rnd(d.mulMax - 1);
+      p.answer = a * b; pre = `${a} × ${b} ＝`;
+    } else {
+      b = 1 + rnd(d.mulMax - 1); p.answer = 1 + rnd(d.mulMax - 1);
+      a = b * p.answer; pre = `${a} ÷ ${b} ＝`;
+    }
   }
-  $("qTxt_" + i).textContent = text;
+  $("qPre_" + i).textContent = pre;
+  $("qPost_" + i).textContent = post;
   p.input = "";
   renderInput(i);
 }
@@ -892,8 +945,14 @@ function showBest() {
   const b = localStorage.getItem(bestKey());
   $("bestLine").textContent = b ? `🏆 此難度單人最佳紀錄：${b} 題` : "";
 }
-$("diffRow").addEventListener("change", showBest);
-showBest();
+function onDiffChange() {
+  showBest();
+  const special = document.querySelector('#diffRow input:checked').value === "friends";
+  $("opsGroup").classList.toggle("hidden", special);   // 好朋友難度不需要選運算
+  $("diffHint").textContent = special ? "🤝 練習湊十：A＋?=10 與 10−A=?，幫小朋友熟悉湊成 10 的好朋友" : "";
+}
+$("diffRow").addEventListener("change", onDiffChange);
+onDiffChange();
 
 // 雙人模式才顯示第二個名字欄
 $("modeRow").addEventListener("change", () => {
@@ -906,12 +965,16 @@ $("name1").value = localStorage.getItem("wb_name1") || "";
 $("name2").value = localStorage.getItem("wb_name2") || "";
 
 function startGame() {
-  ops = [...document.querySelectorAll("#opsRow input:checked")].map(c => c.value);
-  if (ops.length === 0) { $("warnMsg").textContent = "至少要選一種運算喔！"; return; }
-  $("warnMsg").textContent = "";
-
   mode = document.querySelector('#modeRow input:checked').value;
   diff = DIFF[document.querySelector('#diffRow input:checked').value];
+  // 「好朋友」難度固定練習湊十，不看運算選擇；其他難度至少要選一種運算
+  if (diff.special === "friends") {
+    ops = [];
+  } else {
+    ops = [...document.querySelectorAll("#opsRow input:checked")].map(c => c.value);
+    if (ops.length === 0) { $("warnMsg").textContent = "至少要選一種運算喔！"; return; }
+  }
+  $("warnMsg").textContent = "";
   const names = [
     $("name1").value.trim() || "玩家 1",
     $("name2").value.trim() || "玩家 2",
@@ -937,6 +1000,7 @@ function startGame() {
 
   $("timeTxt").textContent = "0:00";
   $("dangerVignette").style.opacity = 0;
+  music.setTrack("game");  // 切到遊戲配樂
   $("startScreen").classList.remove("active");
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.add("active");
@@ -951,7 +1015,7 @@ function startGame() {
 function gameOver(popped) {
   running = false;
   cancelAnimationFrame(rafId);
-  music.TEMPO = music.BASE_TEMPO;  // 回到正常速度
+  music.setTrack("menu");  // 結束後切回輕柔選單曲
   $("dangerVignette").style.opacity = 0;
   const t = performance.now();
   players.forEach((_, i) => drawBalloon(i, t));
@@ -994,7 +1058,7 @@ function showFinal(popped) {
 function goToMenu() {
   running = false;
   cancelAnimationFrame(rafId);
-  music.TEMPO = music.BASE_TEMPO;
+  music.setTrack("menu");
   $("dangerVignette").style.opacity = 0;
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.remove("active");

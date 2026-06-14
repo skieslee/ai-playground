@@ -33,6 +33,13 @@
   #musicBtn:active { transform: scale(.92); }
   #musicBtn.off { filter: grayscale(1); opacity: .6; }
 
+  /* 危險紅色暈影（水位超過門檻時由 JS 控制透明度） */
+  #dangerVignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 40;
+    opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(255,60,40,0) 38%, rgba(214,28,28,.62) 100%);
+  }
+
   /* ---------- 開始畫面 ---------- */
   #startScreen {
     flex-direction: column; align-items: center; gap: 16px;
@@ -215,6 +222,7 @@
 </head>
 <body>
 
+<div id="dangerVignette"></div>
 <button id="musicBtn" title="配樂開關">🎵</button>
 
 <!-- ===== 開始畫面 ===== -->
@@ -297,6 +305,7 @@ const DIFF = {
 };
 const WRONG_PENALTY = 6;   // 答錯時水增加多少 (%)
 const START_LEVEL   = 25;  // 開局水量 (%)
+const DANGER_START  = 70;  // 水位超過此值 (%) 進入緊張狀態：背景變紅、音樂變快、小朋友發抖冒汗
 const ACCENT = ["#1e90d6", "#e53935"];  // 玩家 1 / 玩家 2 代表色
 
 /* ====== 狀態 ====== */
@@ -361,8 +370,8 @@ const MCH = (() => { try { return new BroadcastChannel("wb_music_ch"); } catch (
 
 const music = {
   BASE_TEMPO: 116, // 正常曲速 BPM
-  MAX_TEMPO:  180, // 危險時最快 BPM（水位 100% 時）
-  DANGER_LV:  80,  // 超過此水位（%）開始加速
+  MAX_TEMPO:  184, // 危險時最快 BPM（水位 100% 時）
+  DANGER_LV:  DANGER_START,  // 超過此水位（%）開始加速
   TEMPO: 116,      // 當前曲速（遊戲迴圈動態更新）
   VOL: 0.5,        // 配樂總音量（0~1）
   enabled: localStorage.getItem("wb_music") !== "0",
@@ -572,37 +581,61 @@ function stageSVG(i, name) {
     <!-- 地面陰影 -->
     <ellipse cx="200" cy="545" rx="95" ry="14" fill="rgba(0,0,0,.12)"/>
 
-    <!-- 小朋友 -->
-    <g>
-      <rect x="172" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
-      <rect x="208" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
-      <ellipse cx="180" cy="535" rx="20" ry="10" fill="#5d4037"/>
-      <ellipse cx="220" cy="535" rx="20" ry="10" fill="#5d4037"/>
-      <path d="M160 400 Q160 380 200 380 Q240 380 240 400 L236 480 L164 480 Z" fill="#ffca28"/>
-      <path d="M168 400 Q130 380 118 330" stroke="#ffca28" stroke-width="16" fill="none" stroke-linecap="round"/>
-      <path d="M232 400 Q270 380 282 330" stroke="#ffca28" stroke-width="16" fill="none" stroke-linecap="round"/>
-      <circle cx="118" cy="326" r="11" fill="#ffe0b2"/>
-      <circle cx="282" cy="326" r="11" fill="#ffe0b2"/>
-      <circle cx="200" cy="345" r="46" fill="#ffe0b2"/>
-      <path d="M156 338 Q158 296 200 294 Q242 296 244 338 Q236 312 200 312 Q164 312 156 338 Z" fill="#6d4c41"/>
+    <!-- 小朋友（整個 kidBody 群組可平常微擺、緊張時發抖） -->
+    <g id="kidBody_${i}">
+      <!-- 腿 / 鞋 -->
+      <rect x="173" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
+      <rect x="207" y="470" width="20" height="60" rx="10" fill="#3f51b5"/>
+      <ellipse cx="181" cy="535" rx="20" ry="10" fill="#5d4037"/>
+      <ellipse cx="219" cy="535" rx="20" ry="10" fill="#5d4037"/>
+      <!-- 身體 -->
+      <path d="M158 402 Q158 380 200 380 Q242 380 242 402 L237 482 L163 482 Z" fill="#ffca28"/>
+      <path d="M158 402 Q158 380 200 380 Q242 380 242 402 L240 416 L160 416 Z" fill="#ffd95a"/>
+      <!-- 手臂（舉起扶水球） -->
+      <path d="M166 402 Q128 380 116 330" stroke="#ffca28" stroke-width="17" fill="none" stroke-linecap="round"/>
+      <path d="M234 402 Q272 380 284 330" stroke="#ffca28" stroke-width="17" fill="none" stroke-linecap="round"/>
+      <circle cx="116" cy="326" r="12" fill="#ffe0b2"/>
+      <circle cx="284" cy="326" r="12" fill="#ffe0b2"/>
+      <!-- 頭 -->
+      <circle cx="200" cy="345" r="49" fill="#ffe0b2"/>
+      <!-- 耳朵 -->
+      <circle cx="152" cy="348" r="9" fill="#ffe0b2"/>
+      <circle cx="248" cy="348" r="9" fill="#ffe0b2"/>
+      <!-- 頭髮 -->
+      <path d="M152 340 Q154 292 200 290 Q246 292 248 340 Q237 308 200 308 Q163 308 152 340 Z" fill="#6d4c41"/>
+      <!-- 呆毛 -->
+      <path d="M200 290 Q197 272 212 267 Q201 277 207 290" fill="none" stroke="#6d4c41" stroke-width="5" stroke-linecap="round"/>
+      <!-- 開心臉 -->
       <g id="faceHappy_${i}">
-        <circle cx="184" cy="342" r="5" fill="#333"/>
-        <circle cx="216" cy="342" r="5" fill="#333"/>
-        <path d="M186 362 Q200 374 214 362" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <circle cx="183" cy="343" r="7.5" fill="#3a2e2e"/>
+        <circle cx="217" cy="343" r="7.5" fill="#3a2e2e"/>
+        <circle cx="186" cy="340" r="2.8" fill="#fff"/>
+        <circle cx="220" cy="340" r="2.8" fill="#fff"/>
+        <path d="M185 363 Q200 377 215 363" stroke="#3a2e2e" stroke-width="4" fill="none" stroke-linecap="round"/>
       </g>
+      <!-- 緊張臉 -->
       <g id="faceWorried_${i}" style="display:none">
-        <circle cx="184" cy="342" r="6" fill="#333"/>
-        <circle cx="216" cy="342" r="6" fill="#333"/>
-        <ellipse cx="200" cy="366" rx="9" ry="11" fill="#333"/>
-        <path d="M170 326 L194 332 M230 326 L206 332" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="183" cy="345" r="8" fill="#3a2e2e"/>
+        <circle cx="217" cy="345" r="8" fill="#3a2e2e"/>
+        <circle cx="185" cy="342" r="2.5" fill="#fff"/>
+        <circle cx="219" cy="342" r="2.5" fill="#fff"/>
+        <path d="M167 329 L191 335 M233 329 L209 335" stroke="#3a2e2e" stroke-width="3.5" stroke-linecap="round"/>
+        <ellipse cx="200" cy="368" rx="8" ry="10" fill="#3a2e2e"/>
       </g>
+      <!-- 噴水濕臉 -->
       <g id="faceSoaked_${i}" style="display:none">
-        <path d="M176 338 L192 348 M192 338 L176 348" stroke="#333" stroke-width="4" stroke-linecap="round"/>
-        <path d="M208 338 L224 348 M224 338 L208 348" stroke="#333" stroke-width="4" stroke-linecap="round"/>
-        <path d="M188 370 Q200 360 212 370" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M175 340 L191 351 M191 340 L175 351" stroke="#3a2e2e" stroke-width="4" stroke-linecap="round"/>
+        <path d="M209 340 L225 351 M225 340 L209 351" stroke="#3a2e2e" stroke-width="4" stroke-linecap="round"/>
+        <path d="M187 371 Q200 361 213 371" stroke="#3a2e2e" stroke-width="4" fill="none" stroke-linecap="round"/>
       </g>
-      <circle cx="172" cy="356" r="7" fill="#ffab91" opacity=".7"/>
-      <circle cx="228" cy="356" r="7" fill="#ffab91" opacity=".7"/>
+      <!-- 紅暈 -->
+      <circle cx="169" cy="359" r="8.5" fill="#ff8a80" opacity=".7"/>
+      <circle cx="231" cy="359" r="8.5" fill="#ff8a80" opacity=".7"/>
+      <!-- 冷汗（緊張時由 JS 顯示並滴落） -->
+      <g id="sweat_${i}" style="display:none">
+        <path id="sweatA_${i}" d="M0 0 C -5 8 -5 15 0 15 C 5 15 5 8 0 0 Z" fill="#a6e3ff" stroke="#5bc0f0" stroke-width="1.5"/>
+        <path id="sweatB_${i}" d="M0 0 C -4 6 -4 12 0 12 C 4 12 4 6 0 0 Z" fill="#a6e3ff" stroke="#5bc0f0" stroke-width="1.5"/>
+      </g>
     </g>
 
     <!-- 水球（以 200,160 為中心縮放） -->
@@ -684,8 +717,8 @@ function drawBalloon(i, t) {
   const level = players[i].level;
   // 縮放：水量 0% → 0.55 倍，100% → 1.18 倍
   const s = 0.55 + (level / 100) * 0.63;
-  // 快爆時抖動
-  const danger = level > 75 ? (level - 75) / 25 : 0;
+  // 進入緊張狀態後的程度 0~1
+  const danger = level > DANGER_START ? (level - DANGER_START) / (100 - DANGER_START) : 0;
   const jx = danger * Math.sin(t / 38 + i * 7) * 4;
   const jy = danger * Math.cos(t / 31 + i * 7) * 3;
   $("balloonScale_" + i).setAttribute("transform",
@@ -709,8 +742,37 @@ function drawBalloon(i, t) {
     danger > 0 ? `rgb(${207 + danger * 48},${238 - danger * 90},${255 - danger * 100})` : "#cfeeff");
 
   // 表情
-  $("faceHappy_" + i).style.display   = level <= 70 ? "" : "none";
-  $("faceWorried_" + i).style.display = level > 70 ? "" : "none";
+  $("faceHappy_" + i).style.display   = level <= DANGER_START ? "" : "none";
+  $("faceWorried_" + i).style.display = level > DANGER_START ? "" : "none";
+
+  // 小朋友動作：平常輕鬆微擺，緊張時整個身體發抖
+  const kb = $("kidBody_" + i);
+  if (danger > 0) {
+    const tx = Math.sin(t / 45 + i * 3) * danger * 4 + Math.sin(t / 23) * danger * 2;
+    const ty = Math.cos(t / 40 + i) * danger * 2;
+    kb.setAttribute("transform", `translate(${tx.toFixed(2)} ${ty.toFixed(2)})`);
+  } else {
+    const sway = Math.sin(t / 650 + i) * 2.5;
+    kb.setAttribute("transform", `translate(0 ${sway.toFixed(2)})`);
+  }
+
+  // 冷汗：緊張時兩顆汗珠從太陽穴滴落
+  const sweatG = $("sweat_" + i);
+  if (danger > 0.04) {
+    sweatG.style.display = "";
+    const dripDrop = (id, baseX, baseY, period, off) => {
+      const ph = (((t / period) + off) % 1 + 1) % 1;     // 0~1 循環
+      const y = baseY + ph * 26;
+      const op = danger * (ph < 0.2 ? ph / 0.2 : 1 - (ph - 0.2) / 0.8);
+      const el = $(id);
+      el.setAttribute("transform", `translate(${baseX} ${y.toFixed(1)})`);
+      el.setAttribute("opacity", Math.max(0, op).toFixed(2));
+    };
+    dripDrop("sweatA_" + i, 157, 332, 900, 0);
+    dripDrop("sweatB_" + i, 243, 336, 1050, 0.45);
+  } else {
+    sweatG.style.display = "none";
+  }
 }
 
 /* ====== 爆破動畫 ====== */
@@ -759,9 +821,12 @@ function loop(t) {
   players.forEach((p, i) => drawBalloon(i, t));
   $("timeTxt").textContent = fmt(elapsed);
 
-  // 根據最危險玩家的水位動態加速音樂
+  // 根據最危險玩家的水位動態加速音樂、控制紅色暈影
   const maxLevel = Math.max(...players.map(p => p.level));
   music.setDanger(maxLevel);
+  const dl = maxLevel > DANGER_START ? (maxLevel - DANGER_START) / (100 - DANGER_START) : 0;
+  const pulse = 0.7 + 0.3 * Math.sin(t / 110);  // 心跳般的脈動
+  $("dangerVignette").style.opacity = (dl * pulse).toFixed(3);
 
   const popped = [];
   players.forEach((p, i) => { if (p.level >= 100) popped.push(i); });
@@ -871,6 +936,7 @@ function startGame() {
   });
 
   $("timeTxt").textContent = "0:00";
+  $("dangerVignette").style.opacity = 0;
   $("startScreen").classList.remove("active");
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.add("active");
@@ -886,6 +952,7 @@ function gameOver(popped) {
   running = false;
   cancelAnimationFrame(rafId);
   music.TEMPO = music.BASE_TEMPO;  // 回到正常速度
+  $("dangerVignette").style.opacity = 0;
   const t = performance.now();
   players.forEach((_, i) => drawBalloon(i, t));
   popped.forEach(i => explode(i));
@@ -928,6 +995,7 @@ function goToMenu() {
   running = false;
   cancelAnimationFrame(rafId);
   music.TEMPO = music.BASE_TEMPO;
+  $("dangerVignette").style.opacity = 0;
   $("overScreen").classList.remove("active");
   $("gameScreen").classList.remove("active");
   $("startScreen").classList.add("active");

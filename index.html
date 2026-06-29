@@ -440,12 +440,16 @@ async function cloudSubmit(name, d, score) {
   } catch (e) { console.warn("上傳成績失敗：", e); }
 }
 // 取某難度排行榜前 n 名
+// 注意：只用 where 篩 diff（單欄位查詢，免建索引），排序在前端做。
+// 若改成 .orderBy("best") 由伺服器排序，Firestore 會要求另外建立複合索引。
 async function cloudLeaderboard(d, n = 5) {
   if (!cloudReady) return [];
   try {
-    const q = await db.collection("scores")
-      .where("diff", "==", d).orderBy("best", "desc").limit(n).get();
-    return q.docs.map(doc => doc.data());
+    const q = await db.collection("scores").where("diff", "==", d).get();
+    return q.docs
+      .map(doc => doc.data())
+      .sort((a, b) => (b.best || 0) - (a.best || 0))
+      .slice(0, n);
   } catch (e) { console.warn("讀取排行榜失敗：", e); return []; }
 }
 

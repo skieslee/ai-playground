@@ -85,6 +85,8 @@
   #startBtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e65100; }
   .warn { color: #d32f2f; font-size: .9rem; min-height: 1.2em; }
   .best { color: #888; font-size: .9rem; }
+  .board { color: #666; font-size: .85rem; line-height: 1.5; text-align: center; }
+  .board b { color: #1577c2; }
   .hidden { display: none !important; }
   .diffHint { color: #1577c2; font-size: .85rem; margin-top: 8px; text-align: center; min-height: 1em; }
   .optRow small { font-size: .72rem; opacity: .75; font-weight: normal; }
@@ -283,6 +285,7 @@
   <div class="warn" id="warnMsg"></div>
   <button id="startBtn">開始遊戲</button>
   <div class="best" id="bestLine"></div>
+  <div class="board" id="boardLine"></div>
 </div>
 
 <!-- ===== 遊戲畫面 ===== -->
@@ -307,9 +310,82 @@
   </div>
 </div>
 
+<!-- Firebase（雲端紀錄用）：compat 版，提供全域 firebase 物件 -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
+
+/* ============================================================
+ * ☁️ 雲端紀錄設定（Firebase Firestore）
+ * ------------------------------------------------------------
+ * 👇 到 https://console.firebase.google.com 建立專案後，
+ *    把「Web App 設定」那段貼到下面這塊就好。其餘程式不用動。
+ *    （還沒填也能玩，只是紀錄只存在本機、不會跨裝置。）
+ * ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCARqwMojV8RkZCmIos4fEtxcK1SAfg6ds",
+  authDomain: "math-game-b5295.firebaseapp.com",
+  projectId: "math-game-b5295",
+  storageBucket: "math-game-b5295.firebasestorage.app",
+  messagingSenderId: "659145124149",
+  appId: "1:659145124149:web:6e952fba4cf6c1c950047c",
+};
+
+let db = null;          // Firestore 實例
+let cloudReady = false; // 設定填好且初始化成功才為 true
+function initCloud() {
+  if (!FIREBASE_CONFIG.projectId) return;   // 還沒填設定 → 維持本機模式
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    cloudReady = true;
+  } catch (e) {
+    console.warn("雲端初始化失敗，改用本機紀錄：", e);
+  }
+}
+initCloud();
+
+// 文件 id：用「名字__難度」，名字做編碼避免特殊字元（Firestore id 不能含 "/"）
+function scoreDocId(name, d) {
+  return encodeURIComponent(name.trim().toLowerCase()) + "__" + d;
+}
+// 讀某玩家在某難度的最佳成績；失敗或未設定回傳 null
+async function cloudGetBest(name, d) {
+  if (!cloudReady || !name) return null;
+  try {
+    const snap = await db.collection("scores").doc(scoreDocId(name, d)).get();
+    return snap.exists ? (snap.data().best || 0) : 0;
+  } catch (e) { console.warn("讀取雲端紀錄失敗：", e); return null; }
+}
+// 上傳成績：用交易確保只有「比舊紀錄高」才寫入（也符合安全規則）
+async function cloudSubmit(name, d, score) {
+  if (!cloudReady || !name) return;
+  try {
+    const ref = db.collection("scores").doc(scoreDocId(name, d));
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      const prev = snap.exists ? (snap.data().best || 0) : 0;
+      if (score > prev) {
+        tx.set(ref, {
+          name: name, diff: d, best: score,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  } catch (e) { console.warn("上傳成績失敗：", e); }
+}
+// 取某難度排行榜前 n 名
+async function cloudLeaderboard(d, n = 5) {
+  if (!cloudReady) return [];
+  try {
+    const q = await db.collection("scores")
+      .where("diff", "==", d).orderBy("best", "desc").limit(n).get();
+    return q.docs.map(doc => doc.data());
+  } catch (e) { console.warn("讀取排行榜失敗：", e); return []; }
+}
 
 /* ====== 遊戲平衡設定（想調難度改這裡） ====== */
 const DIFF = {
@@ -963,9 +1039,38 @@ function bestKey() {
   const d = document.querySelector('#diffRow input:checked').value;
   return "waterballoon_best_" + d;
 }
-function showBest() {
-  const b = localStorage.getItem(bestKey());
-  $("bestLine").textContent = b ? `🏆 此難度單人最佳紀錄：${b} 題` : "";
+// 開始畫面切難度/改名字會快速連續呼叫 showBest，用 token 丟棄過期的非同步結果
+let bestReqId = 0;
+async function showBest() {
+  const myReq = ++bestReqId;
+  const d = document.querySelector('#diffRow input:checked').value;
+  const name = $("name1").value.trim();
+
+  // 先用本機快取即時顯示，避免等網路時空白
+  const cached = localStorage.getItem(bestKey());
+  $("bestLine").textContent = cached ? `🏆 此難度最佳紀錄：${cached} 題` : "";
+
+  // 雲端：顯示「這位玩家」在此難度的最佳
+  if (cloudReady && name) {
+    const best = await cloudGetBest(name, d);
+    if (myReq !== bestReqId) return;            // 已被更新的呼叫取代 → 放棄
+    if (best != null) {
+      $("bestLine").textContent = best > 0
+        ? `🏆 ${esc(name)} 此難度最佳：${best} 題` : "";
+    }
+  }
+  renderLeaderboard(d, myReq);
+}
+// 排行榜前 5 名
+async function renderLeaderboard(d, myReq) {
+  if (myReq === undefined) myReq = bestReqId;
+  if (!cloudReady) { $("boardLine").innerHTML = ""; return; }
+  const rows = await cloudLeaderboard(d, 5);
+  if (myReq !== bestReqId) return;
+  $("boardLine").innerHTML = rows.length
+    ? "🏅 排行榜<br>" + rows.map((r, i) =>
+        `${i + 1}. ${esc(r.name)} — <b>${r.best}</b> 題`).join("<br>")
+    : "";
 }
 function onDiffChange() {
   showBest();
@@ -987,6 +1092,14 @@ $("modeRow").addEventListener("change", () => {
 $("name1").value = localStorage.getItem("wb_name1") || "";
 $("name2").value = localStorage.getItem("wb_name2") || "";
 
+// 改名字時更新「個人最佳」（排行榜不受名字影響，但一起刷新無妨）
+let nameTimer = 0;
+$("name1").addEventListener("input", () => {
+  clearTimeout(nameTimer);
+  nameTimer = setTimeout(showBest, 300);   // 打字停 0.3 秒再查，避免每個字都打雲端
+});
+showBest();   // 名字填好後再查一次個人最佳
+
 function startGame() {
   mode = document.querySelector('#modeRow input:checked').value;
   diff = DIFF[document.querySelector('#diffRow input:checked').value];
@@ -999,16 +1112,15 @@ function startGame() {
     if (ops.length === 0) { $("warnMsg").textContent = "至少要選一種運算喔！"; return; }
   }
   $("warnMsg").textContent = "";
-  const names = [
-    $("name1").value.trim() || "玩家 1",
-    $("name2").value.trim() || "玩家 2",
-  ];
-  localStorage.setItem("wb_name1", $("name1").value.trim());
-  localStorage.setItem("wb_name2", $("name2").value.trim());
+  const typed = [$("name1").value.trim(), $("name2").value.trim()];
+  const names = [typed[0] || "玩家 1", typed[1] || "玩家 2"];
+  localStorage.setItem("wb_name1", typed[0]);
+  localStorage.setItem("wb_name2", typed[1]);
 
   const n = mode === "duo" ? 2 : 1;
   players = Array.from({ length: n }, (_, i) => ({
-    name: names[i], level: START_LEVEL, score: 0, answer: 0, input: "", lastQ: "",
+    // named：是否真的有打名字（沒打就不上傳雲端，避免「玩家 1」洗榜）
+    name: names[i], named: !!typed[i], level: START_LEVEL, score: 0, answer: 0, input: "", lastQ: "",
   }));
 
   // 建立舞台
@@ -1047,19 +1159,32 @@ function gameOver(popped) {
   setTimeout(() => showFinal(popped), 900);
 }
 
-function showFinal(popped) {
+async function showFinal(popped) {
   if (mode === "single") {
     const p = players[0];
+    const d = document.querySelector('#diffRow input:checked').value;
     $("overTitle").textContent = "💥 水球破掉啦！";
     $("overBody").innerHTML =
       `${esc(p.name)} 答對：<b>${p.score}</b> 題<br>撐了：<b>${fmt(elapsed)}</b>`;
+
+    // 本機快取：立即可見、離線也有
     const key = bestKey();
-    const best = parseInt(localStorage.getItem(key) || "0", 10);
-    if (p.score > best) {
-      localStorage.setItem(key, p.score);
-      $("newBestTxt").textContent = "🎉 新紀錄！";
+    const localBest = parseInt(localStorage.getItem(key) || "0", 10);
+    if (p.score > localBest) localStorage.setItem(key, p.score);
+
+    if (cloudReady && p.named) {
+      // 雲端：用「這位玩家」的舊紀錄判斷是否破紀錄，再上傳
+      $("newBestTxt").textContent = "☁️ 上傳成績中…";
+      const prev = await cloudGetBest(p.name, d);
+      const prevBest = prev == null ? localBest : prev;   // 讀失敗就退回本機
+      await cloudSubmit(p.name, d, p.score);
+      $("newBestTxt").textContent = p.score > prevBest
+        ? "🎉 新紀錄！"
+        : (prevBest ? `${esc(p.name)} 最佳紀錄：${prevBest} 題` : "");
     } else {
-      $("newBestTxt").textContent = best ? `最佳紀錄：${best} 題` : "";
+      // 沒填名字或未啟用雲端 → 只用本機紀錄
+      $("newBestTxt").textContent = p.score > localBest
+        ? "🎉 新紀錄！" : (localBest ? `最佳紀錄：${localBest} 題` : "");
     }
   } else {
     const [p0, p1] = players;

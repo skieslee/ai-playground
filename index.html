@@ -87,6 +87,12 @@
   .best { color: #888; font-size: .9rem; }
   .board { color: #666; font-size: .85rem; line-height: 1.5; text-align: center; }
   .board b { color: #1577c2; }
+  .secondaryBtn {
+    font-family: inherit; font-size: 1rem; font-weight: bold;
+    color: #1577c2; background: #eaf6ff; border: 2px solid #9fd4f5;
+    border-radius: 12px; padding: 9px 22px; cursor: pointer; transition: transform .1s;
+  }
+  .secondaryBtn:active { transform: translateY(2px); }
   .hidden { display: none !important; }
   .diffHint { color: #1577c2; font-size: .85rem; margin-top: 8px; text-align: center; min-height: 1em; }
   .optRow small { font-size: .72rem; opacity: .75; font-weight: normal; }
@@ -216,6 +222,51 @@
   #nextBtn { background: linear-gradient(180deg,#66bb6a,#43a047); box-shadow: 0 5px 0 #2e7d32; }
   #menuBtn { background: linear-gradient(180deg,#90a4ae,#78909c); box-shadow: 0 5px 0 #546e7a; }
 
+  /* ---------- 排行榜畫面 ---------- */
+  #boardScreen {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(20,40,80,.55);
+    align-items: center; justify-content: center;
+  }
+  #boardCard {
+    background: #fff; border-radius: 24px; padding: 26px 30px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    box-shadow: 0 16px 50px rgba(0,0,0,.35); animation: popIn .35s ease-out;
+    width: min(460px, 92vw); max-height: 90vh;
+  }
+  #boardCard h2 { color: #1577c2; font-size: 1.7rem; }
+  #boardTabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #boardTabs button {
+    font-family: inherit; font-size: .95rem; font-weight: bold;
+    color: #555; background: #eef2f5; border: 2px solid transparent;
+    border-radius: 999px; padding: 6px 14px; cursor: pointer; transition: all .12s;
+  }
+  #boardTabs button.active { color: #fff; background: #1e90d6; }
+  #boardList {
+    width: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    min-height: 120px;
+  }
+  .rankRow {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-radius: 12px; background: #f6f9fb;
+  }
+  .rankRow.top1 { background: linear-gradient(90deg,#fff6d6,#fffdf3); }
+  .rankRow.top2 { background: linear-gradient(90deg,#eef1f4,#fbfcfd); }
+  .rankRow.top3 { background: linear-gradient(90deg,#f7ead9,#fdfaf6); }
+  .rankRow .pos { font-size: 1.2rem; width: 2em; text-align: center; flex: none; }
+  .rankRow .who { flex: 1; font-weight: bold; color: #333;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rankRow .pts { color: #fb8c00; font-weight: bold; }
+  .rankRow .pts small { color: #999; font-weight: normal; font-size: .8rem; }
+  .boardMsg { color: #888; text-align: center; padding: 30px 10px; line-height: 1.6; }
+  #boardBackBtn {
+    font-family: inherit; font-size: 1.05rem; font-weight: bold;
+    color: #fff; background: linear-gradient(180deg,#90a4ae,#78909c);
+    border: none; border-radius: 14px; padding: 11px 30px; cursor: pointer;
+    box-shadow: 0 5px 0 #546e7a; transition: transform .1s;
+  }
+  #boardBackBtn:active { transform: translateY(3px); }
+
   /* 手機直向（單人）：上下排列 */
   @media (max-aspect-ratio: 5/6) {
     .mode-single .unit { flex-direction: column; align-items: center; gap: 6px; }
@@ -285,6 +336,7 @@
   <div class="warn" id="warnMsg"></div>
   <button id="startBtn">開始遊戲</button>
   <div class="best" id="bestLine"></div>
+  <button id="openBoardBtn" class="secondaryBtn">🏆 看完整排行榜</button>
   <div class="board" id="boardLine"></div>
 </div>
 
@@ -307,6 +359,16 @@
       <button id="nextBtn">再玩一次</button>
       <button id="menuBtn">回主選單</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== 排行榜畫面 ===== -->
+<div id="boardScreen" class="screen">
+  <div id="boardCard">
+    <h2>🏆 排行榜</h2>
+    <div id="boardTabs"></div>
+    <div id="boardList"></div>
+    <button id="boardBackBtn">← 回主選單</button>
   </div>
 </div>
 
@@ -1214,6 +1276,59 @@ function goToMenu() {
   $("startScreen").classList.add("active");
   showBest();
 }
+
+/* ====== 完整排行榜畫面 ====== */
+const DIFF_LABELS = { easy: "🐣 簡單", medium: "🐥 中等", hard: "🦅 困難", friends: "🤝 湊十" };
+let boardDiff = "easy";
+
+// 建立難度分頁（只建一次）
+$("boardTabs").innerHTML = Object.entries(DIFF_LABELS)
+  .map(([k, label]) => `<button data-diff="${k}">${label}</button>`).join("");
+$("boardTabs").addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (btn) renderBoardScreen(btn.dataset.diff);
+});
+
+async function renderBoardScreen(d) {
+  boardDiff = d;
+  $("boardTabs").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("active", b.dataset.diff === d));   // 標示作用中分頁
+
+  if (!cloudReady) {
+    $("boardList").innerHTML =
+      `<div class="boardMsg">排行榜需要連上雲端才能顯示<br>（目前是本機模式）</div>`;
+    return;
+  }
+  $("boardList").innerHTML = `<div class="boardMsg">載入中…</div>`;
+  const rows = await cloudLeaderboard(d, 10);
+  if (boardDiff !== d) return;            // 載入期間又切到別的難度 → 放棄這次結果
+
+  if (!rows.length) {
+    $("boardList").innerHTML =
+      `<div class="boardMsg">這個難度還沒有人上榜<br>快來搶第一名！🥇</div>`;
+    return;
+  }
+  const medal = ["🥇", "🥈", "🥉"];
+  $("boardList").innerHTML = rows.map((r, i) => `
+    <div class="rankRow${i < 3 ? " top" + (i + 1) : ""}">
+      <span class="pos">${i < 3 ? medal[i] : (i + 1)}</span>
+      <span class="who">${esc(r.name)}</span>
+      <span class="pts">${r.best} <small>題</small></span>
+    </div>`).join("");
+}
+
+function openBoard() {
+  const d = document.querySelector('#diffRow input:checked').value;  // 預設帶入目前選的難度
+  $("startScreen").classList.remove("active");
+  $("boardScreen").classList.add("active");
+  renderBoardScreen(d);
+}
+function closeBoard() {
+  $("boardScreen").classList.remove("active");
+  $("startScreen").classList.add("active");
+}
+$("openBoardBtn").addEventListener("click", openBoard);
+$("boardBackBtn").addEventListener("click", closeBoard);
 
 $("startBtn").addEventListener("click", startGame);
 $("nextBtn").addEventListener("click", startGame);

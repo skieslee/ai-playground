@@ -76,6 +76,15 @@
   }
   .nameRow input:focus { border-color: #1e90d6; }
   #name2.hidden { display: none; }
+  .recentNames { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .recentNames:empty { margin-top: 0; }
+  .recentNames button {
+    font-family: inherit; font-size: .9rem; color: #1577c2;
+    background: #eaf6ff; border: 2px solid #bfe1f7; border-radius: 999px;
+    padding: 4px 12px; cursor: pointer; transition: transform .1s, background .12s;
+  }
+  .recentNames button:active { transform: scale(.94); }
+  .recentNames button:hover { background: #d8efff; }
   #startBtn {
     font-family: inherit; font-size: 1.45rem; font-weight: bold; letter-spacing: 4px;
     color: #fff; background: linear-gradient(180deg,#ffa726,#fb8c00);
@@ -301,6 +310,7 @@
       <input type="text" id="name1" maxlength="8" placeholder="玩家 1 的名字">
       <input type="text" id="name2" maxlength="8" placeholder="玩家 2 的名字" class="hidden">
     </div>
+    <div class="recentNames" id="recentNames"></div>
   </div>
 
   <div class="optGroup" id="opsGroup">
@@ -1158,6 +1168,38 @@ $("modeRow").addEventListener("change", () => {
 $("name1").value = localStorage.getItem("wb_name1") || "";
 $("name2").value = localStorage.getItem("wb_name2") || "";
 
+/* ====== 最近用過的名字（快速選取，最多 5 個） ====== */
+function getRecentNames() {
+  try { return JSON.parse(localStorage.getItem("wb_recent") || "[]"); }
+  catch { return []; }
+}
+function addRecentName(name) {
+  name = (name || "").trim();
+  if (!name) return;
+  // 不分大小寫去重，最新的排最前面，只留 5 個
+  const list = getRecentNames().filter(n => n.toLowerCase() !== name.toLowerCase());
+  list.unshift(name);
+  localStorage.setItem("wb_recent", JSON.stringify(list.slice(0, 5)));
+}
+// 點標籤要填進「最後點到的那個輸入框」，預設玩家 1
+let activeNameInput = $("name1");
+[$("name1"), $("name2")].forEach(inp =>
+  inp.addEventListener("focus", () => { activeNameInput = inp; }));
+
+function renderRecent() {
+  const list = getRecentNames();
+  $("recentNames").innerHTML = list
+    .map(n => `<button type="button" data-name="${esc(n)}">${esc(n)}</button>`).join("");
+}
+$("recentNames").addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const target = activeNameInput || $("name1");
+  target.value = btn.dataset.name;
+  if (target.id === "name1") showBest();   // 個人最佳跟著玩家 1 更新
+});
+renderRecent();
+
 // 改名字時更新「個人最佳」（排行榜不受名字影響，但一起刷新無妨）
 let nameTimer = 0;
 $("name1").addEventListener("input", () => {
@@ -1182,6 +1224,10 @@ function startGame() {
   const names = [typed[0] || "玩家 1", typed[1] || "玩家 2"];
   localStorage.setItem("wb_name1", typed[0]);
   localStorage.setItem("wb_name2", typed[1]);
+  // 加入「最近用過的名字」（先加玩家 2、再加玩家 1，讓玩家 1 排最前）
+  addRecentName(typed[1]);
+  addRecentName(typed[0]);
+  renderRecent();
 
   const n = mode === "duo" ? 2 : 1;
   players = Array.from({ length: n }, (_, i) => ({
